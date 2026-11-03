@@ -122,6 +122,7 @@ def parse_room(raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": raw.get("id"),
         "name": raw.get("name") or f"Kamer {raw.get('id')}",
+        "name_from_api": bool(raw.get("name")),
         "room_temp": _get(raw, "sensorDataPoints", "insideTemperature", "value"),
         "humidity": _get(raw, "sensorDataPoints", "humidity", "percentage"),
         "on": power_on,
@@ -136,6 +137,26 @@ def parse_room(raw: dict[str, Any]) -> dict[str, Any]:
         "window_open": bool(_get(raw, "openWindow", "activated")),
         "online": _get(raw, "connection", "state") in (None, "CONNECTED"),
     }
+
+
+def room_name_overrides() -> dict[str, str]:
+    """TADO_ROOM_NAMES=1=Woonkamer;2=Keuken -> {"1": "Woonkamer", ...}"""
+    out = {}
+    for part in (config.tado_room_names or "").split(";"):
+        k, sep, v = part.partition("=")
+        if sep and k.strip() and v.strip():
+            out[k.strip()] = v.strip()
+    return out
+
+
+def apply_name(room: dict[str, Any], api_names: dict[str, str]) -> dict[str, Any]:
+    rid = str(room.get("id"))
+    over = room_name_overrides()
+    if rid in over:
+        return {**room, "name": over[rid]}
+    if not room.get("name_from_api") and api_names.get(rid):
+        return {**room, "name": api_names[rid]}
+    return room
 
 
 def manual_payload(target: float | None, termination: str, hours: float | None = None) -> dict[str, Any]:
@@ -293,7 +314,20 @@ class TadoClient:
     async def rooms(self) -> list[dict[str, Any]]:
         hid = await self.home_id()
         raw = await self.request("GET", f"{HOPS}homes/{hid}/rooms")
-        return [parse_room(r) for r in (raw or []) if isinstance(r, dict)]
+        rooms = [parse_room(r) for r in (raw or []) if isinstance(r, dict)]
+        # /rooms geeft niet altijd een naam mee; roomsAndDevices wel. Eén keer ophalen en bewaren.
+        names: dict[str, str] = self.data.get("room_names") or {}
+        nameless = [r for r in rooms if not r.get("name_from_api")]
+        if nameless and any(str(r["id"]) not in names for r in nameless):
+            try:
+                rd = await self.request("GET", f"{HOPS}homes/{hid}/roomsAndDevices")
+                names = {str(x.get("roomId")): x.get("roomName") for x in (rd or {}).get("rooms", [])
+                         if x.get("roomId") is not None and x.get("roomName")}
+                self.data["room_names"] = names
+                self.store.save(self.data)
+            except TadoError as exc:
+                log.info("tado: kamernamen ophalen lukte niet: %s", exc)
+        return [apply_name(r, names) for r in rooms]
 
     async def set_manual(self, room_id: int, target: float | None, termination: str,
                          hours: float | None = None) -> None:

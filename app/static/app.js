@@ -365,14 +365,22 @@ function renderLive(d) {
   const alerts = d.open_alerts || [];
   $("#panelBadge").hidden = !alerts.length;
   $("#panelBadge").textContent = alerts.length;
+  // Wegklikken geldt per melding: een nieuwe melding verschijnt weer. Het rode bolletje bij
+  // Zonnepanelen blijft staan zolang de melding open is.
+  const shown = alerts.filter((a) => !dismissedAlerts().includes(alertKey(a)));
   const strip = $("#alertStrip");
-  strip.hidden = !alerts.length || location.hash === "#panelen";
-  if (alerts.length) {
+  strip.hidden = !shown.length || location.hash === "#panelen";
+  if (shown.length) {
     strip.className = "alert-strip verdict bad";
-    const one = alerts[0];
-    const deadOne = alerts.length === 1 && one.deviation != null && one.deviation <= -75;
-    strip.innerHTML = `${warnIcon()}<div><h2>${alerts.length === 1 ? `Zonnepaneel ${esc(one.name)} ${deadOne ? "levert (bijna) niets op" : "levert te weinig op"}` : `${alerts.length} zonnepanelen leveren te weinig op`}</h2><p><a href="#panelen">Bekijk de panelen</a></p></div>`;
+    const one = shown[0];
+    const deadOne = shown.length === 1 && one.deviation != null && one.deviation <= -75;
+    strip.innerHTML = `${warnIcon()}<div><h2>${shown.length === 1 ? `Zonnepaneel ${esc(one.name)} ${deadOne ? "levert (bijna) niets op" : "levert te weinig op"}` : `${shown.length} zonnepanelen leveren te weinig op`}</h2><p><a href="#panelen">Bekijk de panelen</a></p></div><button class="close" aria-label="Melding wegklikken" title="Wegklikken">×</button>`;
+    strip.querySelector(".close").onclick = () => {
+      saveDismissed([...dismissedAlerts(), ...shown.map(alertKey)]);
+      strip.hidden = true;
+    };
   }
+  renderPriceStrip(d.price);
 
   // bronnen
   const names = { grid: "Slimme meter", battery: "Thuisbatterij", solar: "Zonnepanelen", heatpump: "Warmtepomp", aircon: "Airco's", heating: "Verwarming" };
@@ -440,7 +448,36 @@ function drawCurve() {
   });
 }
 
+/* ================= meldingen wegklikken ================= */
+const alertKey = (a) => `${a.serial}:${a.opened_day}`;
+function dismissedAlerts() {
+  try { return JSON.parse(localStorage.getItem("dismissedAlerts") || "[]"); } catch { return []; }
+}
+function saveDismissed(keys) {
+  try { localStorage.setItem("dismissedAlerts", JSON.stringify([...new Set(keys)].slice(-50))); } catch { /* privémodus */ }
+}
+
 /* ================= prijzen ================= */
+// Bovenaan Nu en Klimaat: in één oogopslag het goedkoopste moment.
+function renderPriceStrip(p) {
+  const strip = $("#priceStrip");
+  const view = (location.hash || "#nu").slice(1);
+  const b = p && p.cheapest_2h;
+  strip.hidden = !b || !["nu", "klimaat", "airco", ""].includes(view);
+  if (strip.hidden) return;
+  const neg = (p.negative || [])[0];
+  const now = p.now;
+  const cheapNow = now && b.start * 1000 <= Date.now() && Date.now() < b.end * 1000;
+  const main = neg
+    ? `<strong>Negatieve prijs ${dayWord(neg.start)} ${clock(neg.start)} tot ${clock(neg.end)}</strong><span>terugleveren kost dan geld; zet dan juist de vaatwasser of wasmachine aan</span>`
+    : cheapNow
+      ? `<strong>Nu is het goedkoopste moment, tot ${clock(b.end)}</strong><span>gemiddeld ${cent(b.avg)} per kWh</span>`
+      : `<strong>Goedkoopst: ${dayWord(b.start)} ${clock(b.start)} tot ${clock(b.end)}</strong><span>gemiddeld ${cent(b.avg)} per kWh</span>`;
+  const nowTxt = now ? `<em class="lvl ${now.level || ""}">Nu ${cent(now.all_in)}${now.level ? `, ${now.level}` : ""}</em>` : "";
+  strip.innerHTML = `${tipIcon.clock}<div>${main}</div>${nowTxt}`;
+}
+
+/* ================= prijzen (kaart) ================= */
 const tipIcon = {
   clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>`,
   up: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6 4 4 6-7"/><path d="M15 8h5v5"/></svg>`,
@@ -1256,6 +1293,11 @@ function initHeating() {
 function route() {
   let view = (location.hash || "#nu").slice(1);
   if (view === "airco") view = "klimaat"; // oude link
+  if (view === "prijzen") { // tik op de prijsbalk: naar de prijskaart op Nu
+    history.replaceState(null, "", "#nu");
+    view = "nu";
+    setTimeout(() => $("#priceCard").scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }
   const views = ["nu", "geschiedenis", "panelen", "klimaat", "meldingen"];
   const v = views.includes(view) ? view : "nu";
   for (const id of views) $(`#view-${id}`).hidden = id !== v;

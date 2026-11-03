@@ -70,6 +70,7 @@ class FakeTado:
         app.router.add_get("/api/v2/me", self.me)
         app.router.add_get("/api/v2/homes/{hid}", self.home)
         app.router.add_get("/homes/{hid}/rooms", self.rooms)
+        app.router.add_get("/homes/{hid}/roomsAndDevices", self.rooms_and_devices)
         app.router.add_post("/homes/{hid}/rooms/{rid}/manualControl", self.manual)
         app.router.add_post("/homes/{hid}/rooms/{rid}/resumeSchedule", self.resume)
         self.app = app
@@ -117,6 +118,10 @@ class FakeTado:
     async def rooms(self, req):
         self._auth(req)
         return self._limited([ROOM])
+
+    async def rooms_and_devices(self, req):
+        self._auth(req)
+        return self._limited({"rooms": [{"roomId": 1, "roomName": "Woonkamer", "devices": []}], "otherDevices": []})
 
     async def manual(self, req):
         self._auth(req)
@@ -187,3 +192,41 @@ def test_comfort_warm_up():
     assert p["termination"] == {"type": "TIMER", "durationInSeconds": 10800}
     after = tado.apply_change(r, {"target": 21, "hours": 3}, "next_block")
     assert after["manual_type"] == "TIMER" and after["manual_until"] > 0
+
+
+def test_room_names_from_roomsanddevices_and_overrides(monkeypatch, tmp_path):
+    async def main():
+        fake = FakeTado()
+        fake.limit_left = 50
+        nameless = {k: v for k, v in ROOM.items() if k != "name"}
+        async def rooms(req):
+            fake._auth(req)
+            return fake._limited([nameless])
+        server = TestServer(_app_with_rooms(fake, rooms))
+        await server.start_server()
+        base = str(server.make_url("/"))
+        monkeypatch.setattr(tado, "LOGIN", base + "oauth2/")
+        monkeypatch.setattr(tado, "MY_API", base + "api/v2/")
+        monkeypatch.setattr(tado, "HOPS", base)
+        store = tado.TokenStore(str(tmp_path / "tok.json"))
+        store.save({"refresh_token": "ref0", "home_id": 42})
+        fake.refresh_counter = 0
+        try:
+            async with aiohttp.ClientSession() as s:
+                c = tado.TadoClient(s, store)
+                r = (await c.rooms())[0]
+                assert r["name"] == "Woonkamer" and store.load()["room_names"] == {"1": "Woonkamer"}
+                monkeypatch.setattr(tado.config, "tado_room_names", "1=Huiskamer")
+                assert (await c.rooms())[0]["name"] == "Huiskamer"
+        finally:
+            await server.close()
+
+    asyncio.run(main())
+
+
+def _app_with_rooms(fake, rooms_handler):
+    app = web.Application()
+    app.router.add_post("/oauth2/token", fake.token)
+    app.router.add_get("/homes/{hid}/rooms", rooms_handler)
+    app.router.add_get("/homes/{hid}/roomsAndDevices", fake.rooms_and_devices)
+    return app

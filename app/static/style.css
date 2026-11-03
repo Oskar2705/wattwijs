@@ -379,3 +379,27 @@ a.btn { display: inline-block; text-decoration: none; }
 .btn.comfort small { font-weight: 400; font-size: .8rem; opacity: .9; }
 /* Met airco loopt er een lijn linksonder; zet de tekst van het net dan boven het bolletje. */
 #flow:not(.no-ac) .node.grid text { transform: translateY(-116px); }
+
+/* ================= prijsbalk en wegklikbare melding ================= */
+.alert-strip { position: relative; }
+.alert-strip .close {
+  position: absolute; top: .55rem; right: .55rem; width: 2.2rem; height: 2.2rem; padding: 0; border-radius: 50%;
+  background: transparent; color: var(--ink-2); font-size: 1.5rem; line-height: 1; border: 0; cursor: pointer;
+}
+.alert-strip .close:hover { background: var(--rule); }
+.price-strip {
+  display: flex; align-items: center; gap: .8rem; margin-top: 1rem; padding: .75rem 1.1rem;
+  border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface);
+  color: var(--ink); text-decoration: none;
+}
+.price-strip[hidden] { display: none; }
+.price-strip svg { width: 1.6rem; height: 1.6rem; flex: none; color: var(--grid); }
+.price-strip div { display: grid; gap: .05rem; flex: 1; min-width: 0; }
+.price-strip div span { color: var(--ink-2); font-size: .88rem; }
+.price-strip .lvl { font-style: normal; font-size: .85rem; color: var(--ink-2); white-space: nowrap; }
+.price-strip .lvl.goedkoop { color: var(--good); font-weight: 700; }
+.price-strip .lvl.duur { color: var(--critical); font-weight: 700; }
+@media (max-width: 520px) { .price-strip { flex-wrap: wrap; } .price-strip .lvl { width: 100%; padding-left: 2.4rem; } }
+.alert-strip.verdict { padding-right: 3rem; }
+.tabs .sm { display: none; }
+@media (max-width: 520px) { .tabs.five .lg { display: none; } .tabs.five .sm { display: inline; } }
