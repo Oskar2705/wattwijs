@@ -17,8 +17,8 @@ It was built for one Dutch household with a heat pump, a home battery, solar pan
 - **Per-panel check for solar panels.** Every evening each panel is compared with its neighbours in the same row. When one keeps falling behind or dies, you get an email and a push notification. The app learns fixed shading by itself, so it doesn't send false alarms. The roof is drawn the way the SolarEdge portal draws it.
 - **Dynamic prices** (15-minute resolution) with costs and revenue in euros, the cheapest 2-hour block of the day, and warnings for negative prices.
 - **Installable web app with push notifications**, including on iPhone: a morning tip with the cheapest time to run the dishwasher, panel alerts, daily records and a weekly summary.
-- **Air conditioners**: estimated usage per unit and a tab to switch them on or off and set the mode and temperature.
-- **Read-only by default.** The app never changes a setting on any device, except the air conditioners when someone uses the Airco tab (`AIRCO_CONTROL=0` turns that off).
+- **Climate tab**: set the temperature per room on tado° X, and switch air conditioners on or off with mode, temperature, air direction and fan speed. Air conditioner usage is estimated per unit.
+- **Read-only by default.** The app never changes a setting on any device, except the air conditioners and the tado° heating when someone uses the Klimaat tab (`AIRCO_CONTROL=0` makes the air conditioners read-only).
 - **Demo mode** with simulated data, so you can try it without any hardware.
 
 The user interface is in Dutch. Translations are welcome (see [CONTRIBUTING.md](CONTRIBUTING.md)).
@@ -37,6 +37,7 @@ Each *role* has one active integration. The app picks one automatically from the
 | `panels` | `solaredge` | SolarEdge optimizers (per-panel yield) | Monitoring portal |
 | `heatpump` | `dewarmte` | DeWarmte (Pomp AO, MP, T, Heatcycle) | mydewarmte.com cloud API |
 | `aircon` | `wfrac` | Mitsubishi Heavy Industries with WF-RAC wifi module (Smart M-Air app) | Local API, port 51443 |
+| `heating` | `tado` | tado° X (Thread/Matter line) | tado cloud API, linked from the app |
 | `prices` | `frank` | Frank Energie (NL) | Public GraphQL API, no login |
 | all | `demo` | Simulated household | — |
 
@@ -90,7 +91,15 @@ The app has to reach the battery, the P1 dongle and (optionally) the inverter **
 2. Give each indoor unit a fixed IP and list them as `AIRCO_UNITS=Living room=192.168.1.40;Bedroom=192.168.1.41`. A multi-split has one entry per indoor unit.
 3. On first contact the app registers itself on each unit as an extra user, like a second phone. If the unit reports that it has no room for another user, remove an old link in the Smart M-Air app.
 4. The units don't report power in watts. The app estimates it per unit from whether the compressor runs and from the unit's energy counter, which counts in steps of 0.25 kWh. Treat it as an indication; for exact figures put a kWh meter on the air conditioning group.
-5. After a command, the unit gives the app a 60-second lock, so the Smart M-Air app can't change that unit for a minute. Set `AIRCO_CONTROL=0` if you only want to read.
+5. The wifi module has no ECO setting; ECO set on the remote is probably cancelled by a command from the app.
+6. After a command, the unit gives the app a 60-second lock, so the Smart M-Air app can't change that unit for a minute. Set `AIRCO_CONTROL=0` if you only want to read.
+
+**tado° X** (`TADO_ENABLED=1`)
+
+1. Open the Klimaat tab, press **Koppel tado**, open the link and log in with the tado account. The app stores a token in `data/tado_token.json`; no password goes into `.env`.
+2. tado allows **100 API requests a day** without an Auto-Assist subscription. The app therefore reads the rooms every `TADO_POLL_MINUTES` (20) and updates a card itself after a command instead of fetching everything again. With Auto-Assist (20,000 a day) you can lower the interval.
+3. A temperature set in the app lasts until the next block in the schedule (`TADO_MANUAL_UNTIL=next_block`) or until you switch the room back to its schedule (`manual`).
+4. Only the tado X line is supported for now; older V3+ homes use a different API.
 
 **Email**: any SMTP server works. For Gmail, use an *app password*. Send a test with:
 
@@ -145,6 +154,7 @@ Push needs **HTTPS**. The easiest way is `tailscale serve --bg --https=8443 http
 | Morning tip | `PUSH_MORNING_TIME`: the cheapest `PUSH_BLOCK_HOURS`-hour block within `PUSH_BLOCK_WINDOW`, the most expensive moment, negative prices, yesterday in short, and a panel that is still broken |
 | Solar panel | right after the evening check, when a panel breaks or recovers |
 | Negative price | around 13:00, when tomorrow has negative prices |
+| Export | from `CONTRACT_START`: the house has exported more than `PUSH_EXPORT_W` for `PUSH_EXPORT_MINUTES` (and the battery is full). In the heating season it suggests turning the heating up a degree, with a reminder at `PUSH_HEAT_BACK_TIME` |
 | Records | `PUSH_EVENING_TIME`: a production record, a day that was at least 95% self-sufficient, or every 500 kWh produced |
 | Weekly summary | Sunday at `PUSH_WEEKLY_TIME` |
 | Technical | a device has been silent for `OFFLINE_ALERT_MINUTES` (off by default) |

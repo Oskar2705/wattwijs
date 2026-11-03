@@ -259,7 +259,7 @@ function renderLive(d) {
     flow.classList.toggle("no-ac", !hasAc);
     flow.setAttribute("viewBox", hasAc ? "0 0 380 372" : "0 0 380 330");
   }
-  $("#acTab").hidden = !hasAc;
+  $("#acTab").hidden = !(hasAc || n.heating_configured);
   if (hasAc !== curveHasAc && curveData) drawCurve();
   $(".tabs").classList.toggle("five", hasAc);
   if (hasAc) {
@@ -289,7 +289,7 @@ function renderLive(d) {
     li(COLORS.house, `Het huis gebruikt <strong>${fmtW(n.house_w)}</strong>${parts.length ? `, waarvan ${parts.join(" en ")}` : ""}.`);
   }
   if (hasAc && n.aircon_on != null) {
-    li(COLORS.ac, n.aircon_on ? `${n.aircon_on === 1 ? "Er staat 1 airco aan" : `Er staan ${n.aircon_on} airco's aan`}. <a href="#airco">Bedienen</a>` : `Alle airco's staan uit. <a href="#airco">Bedienen</a>`);
+    li(COLORS.ac, n.aircon_on ? `${n.aircon_on === 1 ? "Er staat 1 airco aan" : `Er staan ${n.aircon_on} airco's aan`}. <a href="#klimaat">Bedienen</a>` : `Alle airco's staan uit. <a href="#klimaat">Bedienen</a>`);
   }
   if (!n.battery_configured) { /* batterij niet in gebruik */ }
   else if (n.battery_w == null) li(COLORS.batt, "Geen gegevens van de thuisbatterij.");
@@ -369,7 +369,7 @@ function renderLive(d) {
   }
 
   // bronnen
-  const names = { grid: "Slimme meter", battery: "Thuisbatterij", solar: "Zonnepanelen", heatpump: "Warmtepomp", aircon: "Airco's" };
+  const names = { grid: "Slimme meter", battery: "Thuisbatterij", solar: "Zonnepanelen", heatpump: "Warmtepomp", aircon: "Airco's", heating: "Verwarming" };
   $("#sources").innerHTML = Object.entries(d.sources)
     .map(([k, src]) => {
       const cls = !src.configured ? "" : src.online ? "ok" : "down";
@@ -924,6 +924,7 @@ async function renderPush() {
     <div class="btns">
       <button class="btn ghost" id="pushTest">Stuur een testmelding</button>
       <button class="btn ghost" id="pushMorning">Stuur de ochtendtip nu</button>
+      <button class="btn ghost" id="pushExport">Voorbeeld terugleverbericht</button>
       <button class="btn ghost" id="pushOff">Meldingen uitzetten</button>
     </div>
     <div class="push-msg" id="pushMsg"></div>`;
@@ -935,6 +936,8 @@ async function renderPush() {
   }));
   $("#pushTest").addEventListener("click", () => postJSON("/api/push/test", { endpoint: sub.endpoint })
     .then(() => pushMsg("Testmelding verstuurd.")).catch((err) => pushMsg(`Versturen lukte niet: ${err.message}`, true)));
+  $("#pushExport").addEventListener("click", () => postJSON("/api/push/test", { endpoint: sub.endpoint, kind: "export" })
+    .then(() => pushMsg("Voorbeeld verstuurd.")).catch((err) => pushMsg(`Versturen lukte niet: ${err.message}`, true)));
   $("#pushMorning").addEventListener("click", () => postJSON("/api/push/test", { endpoint: sub.endpoint, kind: "morning" })
     .then(() => pushMsg("Ochtendtip verstuurd.")).catch((err) => pushMsg(`Versturen lukte niet: ${err.message}`, true)));
   $("#pushOff").addEventListener("click", async () => {
@@ -953,7 +956,12 @@ const AC_DOING = { cool: "Koelt", heat: "Verwarmt", dry: "Droogt", auto: "Regelt
 
 async function loadAircon() {
   ac.data = await getJSON("/api/aircon");
+  $("#acWrap").hidden = !ac.data.configured;
   renderAircon();
+}
+function loadClimate() {
+  loadAircon().catch(showAcError);
+  loadHeating().catch(showHeatError);
 }
 function showAcError(e) {
   const box = $("#acError");
@@ -1013,11 +1021,7 @@ function renderAircon() {
   const d = ac.data;
   if (!d) return;
   $("#acError").hidden = true;
-  if (!d.configured) {
-    $("#acUnits").innerHTML = `<div class="card"><p>Er zijn geen airco's ingesteld. Zet ze in <code>AIRCO_UNITS</code> in het bestand <code>.env</code>.</p></div>`;
-    $("#acSummary").textContent = "";
-    return;
-  }
+  if (!d.configured) return;
   const units = d.units || [];
   const on = units.filter((u) => u.online && u.on).length;
   const total = units.reduce((a, u) => a + (u.online && u.power_w ? u.power_w : 0), 0);
@@ -1089,10 +1093,155 @@ function initAircon() {
   });
 }
 
+/* ================= verwarming (tado) ================= */
+const heat = { data: null, busy: new Set(), msg: {}, pending: {} };
+
+async function loadHeating() {
+  heat.data = await getJSON("/api/heating");
+  $("#heatWrap").hidden = !heat.data.configured;
+  renderHeating();
+}
+function showHeatError(e) {
+  const box = $("#heatError");
+  box.hidden = false;
+  box.textContent = `De verwarming kon niet worden opgehaald: ${e.message || e}`;
+}
+
+function heatStatus(r) {
+  if (r.online === false) return ["down", "Geen verbinding met de thermostaat"];
+  if (r.window_open) return ["down", "Raam open, verwarming staat even uit"];
+  if (!r.on) return ["", r.mode === "schedule" ? "Uit volgens schema" : "Uit (vorstbeveiliging)"];
+  if (r.heating_pct > 0) return ["run", `Verwarmt (${nl0.format(r.heating_pct)}%)`];
+  return ["", "Op temperatuur"];
+}
+
+function heatModeLine(r) {
+  if (r.pending) return "Opdracht verstuurd; tado bevestigt bij de volgende update.";
+  if (r.mode === "boost") return "Boost staat aan.";
+  if (r.mode === "manual") {
+    if (r.manual_until) return `Handmatig tot ${clock(r.manual_until)}, daarna weer volgens schema.`;
+    if (r.manual_type === "NEXT_TIME_BLOCK") return "Handmatig tot het volgende blok in het schema.";
+    return "Handmatig, tot je het terugzet op schema.";
+  }
+  if (r.next_change_at) {
+    const to = r.next_change_target == null ? "uit" : `${nl1.format(r.next_change_target)} °C`;
+    return `Volgens schema. Om ${clock(r.next_change_at)} naar ${to}.`;
+  }
+  return "Volgens schema.";
+}
+
+function heatCard(r) {
+  const busy = heat.busy.has(r.id);
+  const dis = busy || r.online === false ? "disabled" : "";
+  const [cls, text] = heatStatus(r);
+  const shown = heat.pending[r.id]?.target ?? r.target;
+  const target = shown == null ? "uit" : `${nl1.format(shown)} °C`;
+  const msg = heat.msg[r.id];
+  return `<div class="card ac-card${r.on ? "" : " off"}${busy ? " busy" : ""}" data-room="${esc(r.id)}">
+    <div class="ac-top"><div><h3>${esc(r.name)}</h3><p class="ac-status ${cls}"><span class="st"></span>${esc(text)}</p></div></div>
+    <div class="ac-temp">
+      <div class="ac-room">In de kamer<strong>${r.room_temp == null ? "–" : `${nl1.format(r.room_temp)} °C`}</strong>${r.humidity != null ? `<span class="ac-sub">vochtigheid ${nl0.format(r.humidity)}%</span>` : ""}</div>
+      <div class="ac-set">
+        <button data-act="hdown" ${dis || (shown != null && shown <= 5 ? "disabled" : "")} aria-label="Een halve graad lager">−</button>
+        <output aria-live="polite">${target}<small>ingesteld</small></output>
+        <button data-act="hup" ${dis || (shown != null && shown >= 25 ? "disabled" : "")} aria-label="Een halve graad hoger">+</button>
+      </div>
+    </div>
+    <div class="ac-row">
+      <div class="ac-modes" role="group" aria-label="Stand">
+        <button data-act="hschedule" aria-pressed="${r.mode === "schedule"}" ${dis}>Volgens schema</button>
+        <button data-act="hoff" aria-pressed="${!r.on && r.mode !== "schedule"}" ${dis}>Uit</button>
+      </div>
+    </div>
+    <p class="ac-msg${msg && msg.err ? " err" : ""}">${busy ? "Bezig, tado krijgt de opdracht…" : msg ? esc(msg.text) : esc(heatModeLine(r))}</p>
+  </div>`;
+}
+
+function renderHeating() {
+  const d = heat.data;
+  if (!d || !d.configured) return;
+  $("#heatError").hidden = !d.error;
+  if (d.error) $("#heatError").textContent = `tado: ${d.error}`;
+  const t = d.tado || {};
+  if (!t.linked) {
+    $("#heatSummary").textContent = "";
+    $("#heatRooms").innerHTML = `<div class="card ac-card">
+      <h3>Koppel tado</h3>
+      ${t.login ? `<p>Open de link en log in met het tado-account. Controleer dat de code <strong>${esc(t.login.user_code)}</strong> is. Daarna verschijnen de kamers hier vanzelf.</p>
+        <p><a class="btn" href="${esc(t.login.url)}" target="_blank" rel="noopener">Inloggen bij tado</a></p>`
+      : `<p>Koppel eenmalig het tado-account, dan kun je hier de temperatuur per kamer instellen.</p>
+        <p><button class="btn" data-act="hlogin">Koppel tado</button></p>`}
+    </div>`;
+    $("#heatNote").textContent = "";
+    return;
+  }
+  const rooms = d.rooms || [];
+  const warm = rooms.filter((r) => r.heating_pct > 0).length;
+  $("#heatSummary").textContent = rooms.length ? (warm ? `${warm} van de ${rooms.length} kamers verwarmen` : "Geen kamer verwarmt nu") : "Kamers ophalen…";
+  $("#heatRooms").innerHTML = rooms.map(heatCard).join("");
+  const upd = d.updated ? `Bijgewerkt om ${clock(d.updated)}. ` : "";
+  const left = t.remaining != null ? `Nog ${t.remaining} aanvragen bij tado vandaag. ` : "";
+  const until = t.termination === "manual" ? "Een handmatige temperatuur blijft staan tot je hem terugzet op schema." : "Een handmatige temperatuur geldt tot het volgende blok in het schema.";
+  $("#heatNote").innerHTML = `${esc(upd)}${esc(left)}${esc(until)} <button class="linkbtn" data-act="hlogout">tado ontkoppelen</button>`;
+}
+
+async function heatCommand(id, changes, okText) {
+  heat.busy.add(id);
+  heat.msg[id] = null;
+  renderHeating();
+  try {
+    const room = await postJSON(`/api/heating/${encodeURIComponent(id)}`, changes);
+    const i = heat.data.rooms.findIndex((r) => String(r.id) === String(id));
+    if (i >= 0) heat.data.rooms[i] = room;
+    heat.msg[id] = { text: okText(room) };
+  } catch (e) {
+    heat.msg[id] = { text: `Lukte niet: ${e.message || e}`, err: true };
+  } finally {
+    heat.busy.delete(id);
+    delete heat.pending[id];
+    renderHeating();
+  }
+}
+
+function heatNudge(r, delta) {
+  const p = heat.pending[r.id] || (heat.pending[r.id] = { target: r.target ?? 20 });
+  p.target = Math.min(25, Math.max(5, Math.round((p.target + delta) * 2) / 2));
+  const out = $(`.ac-card[data-room="${CSS.escape(String(r.id))}"] output`);
+  if (out) out.innerHTML = `${nl1.format(p.target)} °C<small>ingesteld</small>`;
+  clearTimeout(p.t);
+  p.t = setTimeout(() => heatCommand(r.id, { target: p.target }, (x) => `Ingesteld op ${nl1.format(x.target)} °C.`), 1200);
+}
+
+function initHeating() {
+  $("#heatRooms").addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-act]");
+    if (!b || b.disabled) return;
+    if (b.dataset.act === "hlogin") {
+      b.disabled = true;
+      try { await postJSON("/api/heating/login", {}); } catch (err) { showHeatError(err); }
+      return loadHeating().catch(showHeatError);
+    }
+    const id = b.closest(".ac-card").dataset.room;
+    const r = heat.data.rooms.find((x) => String(x.id) === id);
+    if (!r) return;
+    if (b.dataset.act === "hup") heatNudge(r, 0.5);
+    else if (b.dataset.act === "hdown") heatNudge(r, -0.5);
+    else if (b.dataset.act === "hschedule") heatCommand(r.id, { mode: "schedule" }, () => "Weer volgens schema.");
+    else if (b.dataset.act === "hoff") heatCommand(r.id, { mode: "off" }, () => "Verwarming staat uit in deze kamer.");
+  });
+  $("#heatNote").addEventListener("click", async (e) => {
+    if (!e.target.closest("[data-act=hlogout]")) return;
+    if (!confirm("tado ontkoppelen? Je kunt daarna opnieuw koppelen.")) return;
+    await postJSON("/api/heating/logout", {}).catch(showHeatError);
+    loadHeating().catch(showHeatError);
+  });
+}
+
 /* ================= navigatie ================= */
 function route() {
-  const view = (location.hash || "#nu").slice(1);
-  const views = ["nu", "geschiedenis", "panelen", "airco", "meldingen"];
+  let view = (location.hash || "#nu").slice(1);
+  if (view === "airco") view = "klimaat"; // oude link
+  const views = ["nu", "geschiedenis", "panelen", "klimaat", "meldingen"];
   const v = views.includes(view) ? view : "nu";
   for (const id of views) $(`#view-${id}`).hidden = id !== v;
   document.querySelectorAll("a[data-view]").forEach((a) => (a.dataset.view === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
@@ -1101,7 +1250,7 @@ function route() {
   if (v === "nu") { loadCurve().catch(() => {}); loadPrices().catch(() => {}); }
   if (v === "geschiedenis") loadHistory().catch(() => {});
   if (v === "panelen") loadPanels().catch(() => {});
-  if (v === "airco") loadAircon().catch((e) => showAcError(e));
+  if (v === "klimaat") loadClimate();
   if (v === "meldingen") renderPush().catch((e) => { $("#pushBox").textContent = `Laden lukte niet: ${e.message || e}`; });
 }
 
@@ -1116,6 +1265,7 @@ registerSW();
 initHistory();
 initPanels();
 initAircon();
+initHeating();
 route();
 pollLive();
 setInterval(() => { if (!document.hidden) pollLive(); }, 5000);
@@ -1127,5 +1277,5 @@ setInterval(() => {
   if (!pan.day || pan.day === last) loadPanels().catch(() => {});
 }, 60000);
 // Airco-tab open: elke 10 seconden de toestand ophalen (de server vraagt de airco's zelf elke minuut uit)
-setInterval(() => { if (!document.hidden && !$("#view-airco").hidden && !ac.busy.size) loadAircon().catch(showAcError); }, 10000);
+setInterval(() => { if (!document.hidden && !$("#view-klimaat").hidden && !ac.busy.size && !heat.busy.size) loadClimate(); }, 10000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pollLive(); });

@@ -286,3 +286,54 @@ class DemoPrices:
 
     async def fetch_day(self, session: Any, day: date) -> list[tuple[int, str, float, float]]:
         return demo_prices(day)
+
+
+# ---------------- demo-verwarming (tado) ----------------
+
+
+@register("heating", "demo", "Demo (tado, 3 kamers)")
+async def run_heating(src: Source) -> None:
+    from .tado import TERMINATIONS, apply_change
+
+    now = time.time()
+    rooms = [
+        {"id": 1, "name": "Woonkamer", "room_temp": 20.4, "humidity": 52, "on": True, "target": 20.5,
+         "heating_pct": 35, "mode": "schedule", "manual_until": None, "manual_type": None,
+         "next_change_at": now + 3 * 3600, "next_change_target": 18.0, "window_open": False, "online": True},
+        {"id": 2, "name": "Keuken", "room_temp": 19.1, "humidity": 58, "on": True, "target": 19.0,
+         "heating_pct": 0, "mode": "schedule", "manual_until": None, "manual_type": None,
+         "next_change_at": now + 3 * 3600, "next_change_target": 17.0, "window_open": False, "online": True},
+        {"id": 3, "name": "Slaapkamer", "room_temp": 17.2, "humidity": 55, "on": False, "target": None,
+         "heating_pct": 0, "mode": "manual", "manual_until": None, "manual_type": TERMINATIONS["manual"],
+         "next_change_at": None, "next_change_target": None, "window_open": False, "online": True},
+    ]
+    status = {"linked": True, "login": None, "remaining": 87, "termination": config.tado_manual_until}
+
+    async def control(room_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        i = next(i for i, r in enumerate(rooms) if str(r["id"]) == str(room_id))
+        if changes.get("target") is not None and not 5 <= float(changes["target"]) <= 25:
+            raise ValueError("temperatuur moet tussen 5 en 25 °C liggen")
+        await asyncio.sleep(0.6)
+        r = apply_change(rooms[i], changes, config.tado_manual_until)
+        r.pop("pending", None)
+        if changes.get("mode") == "schedule":
+            r.update(on=True, target=20.0)
+        if r["mode"] == "manual" and r["manual_type"] == "NEXT_TIME_BLOCK":
+            r["manual_until"] = r.get("next_change_at")
+        rooms[i] = r
+        status["remaining"] -= 1
+        src.update(rooms=rooms, tado=status)
+        return r
+
+    async def nothing() -> dict[str, Any]:
+        return {"linked": True}
+
+    src.control = control
+    src.actions = {"login": nothing, "logout": nothing}
+    while True:
+        for r in rooms:
+            goal = r["target"] if r["on"] and r["target"] else 16.0
+            r["room_temp"] = round(r["room_temp"] + (goal - r["room_temp"]) * 0.02, 2)
+            r["heating_pct"] = max(0, min(100, int((goal - r["room_temp"]) * 60))) if r["on"] else 0
+        src.update(rooms=rooms, tado=status)
+        await asyncio.sleep(10)

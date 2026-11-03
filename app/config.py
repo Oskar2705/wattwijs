@@ -62,6 +62,12 @@ class Config:
     # DeWarmte
     dw_username: str = field(default_factory=lambda: _str("DEWARMTE_USERNAME"))
     dw_password: str = field(default_factory=lambda: _str("DEWARMTE_PASSWORD"))
+    # Verwarming via tado° X (koppelen gaat in de app, tabblad Klimaat)
+    tado_enabled: bool = field(default_factory=lambda: _bool("TADO_ENABLED", False))
+    # Zonder Auto-Assist mag je 100 aanvragen per dag doen: elke 20 minuten uitlezen past daarin.
+    tado_poll_minutes: float = field(default_factory=lambda: max(2.0, _float("TADO_POLL_MINUTES", 20)))
+    # Hoe lang een handmatige temperatuur geldt: next_block (tot het volgende blok in het schema) of manual
+    tado_manual_until: str = field(default_factory=lambda: _str("TADO_MANUAL_UNTIL", "next_block"))
     # Airco's (Mitsubishi Heavy WF-RAC): "Name=host[:port];Name=host[:port]"
     airco_units: str = field(default_factory=lambda: _str("AIRCO_UNITS"))
     # 0 = alleen uitlezen, het tabblad Airco toont dan geen knoppen
@@ -99,6 +105,13 @@ class Config:
     push_weekly_time: str = field(default_factory=lambda: _str("PUSH_WEEKLY_TIME", "19:00"))  # zondag
     push_block_hours: float = field(default_factory=lambda: _float("PUSH_BLOCK_HOURS", 2))
     push_block_window: str = field(default_factory=lambda: _str("PUSH_BLOCK_WINDOW", "07:00-23:00"))
+    # Pushbericht bij teruglevering. Leeg = vanaf CONTRACT_START (einde salderen).
+    push_export_from: str = field(default_factory=lambda: _str("PUSH_EXPORT_FROM"))
+    push_export_w: float = field(default_factory=lambda: _float("PUSH_EXPORT_W", 500))
+    push_export_minutes: float = field(default_factory=lambda: _float("PUSH_EXPORT_MINUTES", 10))
+    push_export_cooldown_h: float = field(default_factory=lambda: _float("PUSH_EXPORT_COOLDOWN_HOURS", 3))
+    # Herinnering om de verwarming weer terug te zetten na de tip om hem hoger te zetten
+    push_heat_back_time: str = field(default_factory=lambda: _str("PUSH_HEAT_BACK_TIME", "17:00"))
 
     # Mail
     smtp_host: str = field(default_factory=lambda: _str("SMTP_HOST"))

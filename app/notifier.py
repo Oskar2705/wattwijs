@@ -7,10 +7,11 @@ import logging
 from datetime import date, datetime, time as dtime, timedelta
 from typing import Any
 
-from . import push
+from . import exportwatch, push
 from .config import config
 from .db import consumption_wh, get_db, self_sufficiency
-from .prices import QUARTER, cheapest_block, windows
+from .prices import QUARTER, cheapest_block, price_info, windows
+from .state import state
 
 log = logging.getLogger(__name__)
 
@@ -196,12 +197,45 @@ async def _once(key: str, fn) -> None:
     await fn()
 
 
+def export_watcher() -> exportwatch.ExportWatcher:
+    return exportwatch.ExportWatcher(
+        min_w=config.push_export_w, minutes=config.push_export_minutes, cooldown_h=config.push_export_cooldown_h
+    )
+
+
+async def check_export(watcher: exportwatch.ExportWatcher, now: datetime) -> None:
+    """Elke minuut: wordt er al een tijd teruggeleverd, dan een bericht (vanaf CONTRACT_START)."""
+    if not exportwatch.active(now.date()):
+        return
+    snap = state.snapshot()
+    grid, batt_cfg, soc, outdoor = exportwatch.snapshot_inputs(snap)
+    mins = watcher.update(now.timestamp(), grid, batt_cfg, soc)
+    if mins is None or grid is None:
+        return
+    pi = price_info() or {}
+    export_price = (pi.get("now") or {}).get("export")
+    tip = exportwatch.heating_season(now.date(), outdoor) and (now.hour, now.minute) < (
+        _hhmm(config.push_heat_back_time)[0] - 1, _hhmm(config.push_heat_back_time)[1])
+    title, body = exportwatch.build_message(grid, mins, export_price, batt_cfg, tip, config.push_heat_back_time)
+    n = await push.broadcast("export", title, body, url="/#nu", tag="export")
+    log.info("Terugleverbericht verstuurd naar %d telefoon(s)", n)
+    if tip:
+        get_db().set_kv("heat_tip_day", now.date().isoformat())
+
+
 async def run() -> None:
+    watcher = export_watcher()
     while True:
         try:
             now = datetime.now(config.tz)
             today = now.date()
             hhmm = (now.hour, now.minute)
+
+            await check_export(watcher, now)
+            if hhmm >= _hhmm(config.push_heat_back_time) and get_db().get_kv("heat_tip_day") == today.isoformat():
+                async def heat_back() -> None:
+                    await push.broadcast("export", *exportwatch.heat_back_message(), url="/#nu", tag="heat-back")
+                await _once(f"push_heat_back_{today}", heat_back)
 
             if hhmm >= _hhmm(config.push_morning_time) and now.hour < 12:
                 async def morning() -> None:

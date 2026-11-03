@@ -368,3 +368,7 @@ tfoot td { font-weight: 700; border-top: 2px solid var(--rule); }
 }
 .ac-row { display: grid; gap: .35rem; }
 .ac-lbl { font-size: .8rem; color: var(--ink-3); }
+.ac-sub { display: block; font-size: .8rem; color: var(--ink-3); margin-top: .1rem; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: inherit; }
+#heatWrap:not([hidden]) + #acWrap { margin-top: 2.2rem; }
+a.btn { display: inline-block; text-decoration: none; }

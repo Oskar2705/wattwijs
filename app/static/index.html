@@ -25,7 +25,7 @@
       <a href="#nu" data-view="nu">Nu</a>
       <a href="#geschiedenis" data-view="geschiedenis">Geschiedenis</a>
       <a href="#panelen" data-view="panelen">Zonnepanelen <span class="badge" id="panelBadge" hidden>!</span></a>
-      <a href="#airco" data-view="airco" id="acTab" hidden>Airco</a>
+      <a href="#klimaat" data-view="klimaat" id="acTab" hidden>Klimaat</a>
     </nav>
     <a href="#meldingen" data-view="meldingen" class="bell" aria-label="Meldingen" title="Meldingen">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
@@ -204,15 +204,26 @@
         <ul id="alertHistory" class="alert-history"></ul>
       </div>
     </section>
-    <!-- ============ AIRCO ============ -->
-    <section id="view-airco" class="view" hidden>
-      <div class="ac-head">
-        <h2 class="section-title">Airco's</h2>
-        <p class="hint" id="acSummary"></p>
+    <!-- ============ KLIMAAT ============ -->
+    <section id="view-klimaat" class="view" hidden>
+      <div id="heatWrap" hidden>
+        <div class="ac-head">
+          <h2 class="section-title">Verwarming</h2>
+          <p class="hint" id="heatSummary"></p>
+        </div>
+        <p class="ac-error" id="heatError" hidden></p>
+        <div class="ac-units" id="heatRooms"></div>
+        <p class="hint ac-note" id="heatNote"></p>
       </div>
-      <p class="ac-error" id="acError" hidden></p>
-      <div class="ac-units" id="acUnits"></div>
-      <p class="hint ac-note" id="acNote">Het verbruik is een schatting: de airco's geven zelf alleen door hoeveel ze per run verbruiken, in stappen van 0,25 kWh. Na een opdracht kan de Smart M-Air-app de airco een minuut lang niet bedienen. De ECO-stand van de afstandsbediening kan via wifi niet worden ingesteld; een opdracht vanuit deze app zet ECO waarschijnlijk uit.</p>
+      <div id="acWrap" hidden>
+        <div class="ac-head">
+          <h2 class="section-title">Airco's</h2>
+          <p class="hint" id="acSummary"></p>
+        </div>
+        <p class="ac-error" id="acError" hidden></p>
+        <div class="ac-units" id="acUnits"></div>
+        <p class="hint ac-note" id="acNote">Het verbruik is een schatting: de airco's geven zelf alleen door hoeveel ze per run verbruiken, in stappen van 0,25 kWh. Na een opdracht kan de Smart M-Air-app de airco een minuut lang niet bedienen. De ECO-stand van de afstandsbediening kan via wifi niet worden ingesteld; een opdracht vanuit deze app zet ECO waarschijnlijk uit.</p>
+      </div>
     </section>
     <!-- ============ MELDINGEN ============ -->
     <section id="view-meldingen" class="view" hidden>

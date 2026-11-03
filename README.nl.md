@@ -17,8 +17,8 @@ Hij is gemaakt voor een Nederlands huishouden met een warmtepomp, een thuisbatte
 - **Controle per zonnepaneel.** Elke avond wordt elk paneel vergeleken met de panelen naast hem in dezelfde rij. Blijft er een achter of valt er een uit, dan krijg je een mail en een pushmelding. Vaste schaduw leert de app vanzelf, dus die geeft geen valse meldingen. Het dak wordt getekend zoals in het SolarEdge-portaal.
 - **Dynamische prijzen** per kwartier, met kosten en opbrengst in euro's, het goedkoopste blok van 2 uur en waarschuwingen voor negatieve prijzen.
 - **Installeerbare webapp met pushmeldingen**, ook op de iPhone: een ochtendtip met het goedkoopste moment voor de vaatwasser, paneelmeldingen, records en een weekoverzicht.
-- **Airco's**: geschat verbruik per unit en een tabblad om ze aan en uit te zetten en de stand en temperatuur te kiezen.
-- **Standaard alleen lezen.** De app verandert nooit een instelling op een apparaat, behalve de airco's als iemand het tabblad Airco gebruikt (uit te zetten met `AIRCO_CONTROL=0`).
+- **Tabblad Klimaat**: de temperatuur per kamer instellen op tado° X, en airco's aan- en uitzetten met stand, temperatuur, luchtstroom en ventilator. Het verbruik van de airco's wordt per unit geschat.
+- **Standaard alleen lezen.** De app verandert nooit een instelling op een apparaat, behalve de airco's en de tado-verwarming als iemand het tabblad Klimaat gebruikt (de airco's zet je op alleen lezen met `AIRCO_CONTROL=0`).
 - **Demomodus** met nepgegevens, om het zonder apparaten te proberen.
 
 ## Ondersteunde apparaten
@@ -35,6 +35,7 @@ Per *rol* is er één koppeling actief. De app kiest die automatisch op basis va
 | `panels` | `solaredge` | SolarEdge-optimizers (per paneel) | Monitoringportaal |
 | `heatpump` | `dewarmte` | DeWarmte (Pomp AO, MP, T, Heatcycle) | Cloud-API van mydewarmte.com |
 | `aircon` | `wfrac` | Mitsubishi Heavy Industries met wifi-module WF-RAC (Smart M-Air-app) | Lokale API, poort 51443 |
+| `heating` | `tado` | tado° X (Thread/Matter-lijn) | Cloud-API van tado, koppelen in de app |
 | `prices` | `frank` | Frank Energie | Openbare API, geen login |
 | alle | `demo` | Gesimuleerd huishouden | — |
 
@@ -88,7 +89,15 @@ De app moet de batterij, de P1-dongle en eventueel de omvormer **op het lokale n
 2. Geef elke binnenunit een vast IP-adres en zet ze in `AIRCO_UNITS=Woonkamer=192.168.1.40;Slaapkamer=192.168.1.41`. Bij een multisplit is dat één regel per binnenunit.
 3. Bij het eerste contact meldt de app zich op elke unit aan als extra gebruiker, net als een tweede telefoon. Meldt de unit dat er geen plek meer is, verwijder dan een oude koppeling in de Smart M-Air-app.
 4. De units geven geen vermogen in watt door. De app schat het per unit uit of de compressor draait en uit de energieteller van de unit, die telt in stappen van 0,25 kWh. Zie het als een indicatie; voor exacte cijfers zet je een kWh-meter op de airco-groep.
-5. Na een opdracht houdt de unit de app 60 seconden vast, dus de Smart M-Air-app kan die unit dan een minuut niet bedienen. Wil je alleen uitlezen, zet dan `AIRCO_CONTROL=0`.
+5. De wifi-module kent geen ECO-stand; ECO van de afstandsbediening gaat waarschijnlijk uit na een opdracht uit de app.
+6. Na een opdracht houdt de unit de app 60 seconden vast, dus de Smart M-Air-app kan die unit dan een minuut niet bedienen. Wil je alleen uitlezen, zet dan `AIRCO_CONTROL=0`.
+
+**tado° X** (`TADO_ENABLED=1`)
+
+1. Open het tabblad Klimaat, tik op **Koppel tado**, open de link en log in met het tado-account. De app bewaart een token in `data/tado_token.json`; er komt geen wachtwoord in `.env`.
+2. tado staat zonder Auto-Assist-abonnement **100 aanvragen per dag** toe. De app leest de kamers daarom elke `TADO_POLL_MINUTES` (20) minuten uit en past na een opdracht de kaart zelf aan, zonder alles opnieuw op te halen. Met Auto-Assist (20.000 per dag) kun je vaker laten uitlezen.
+3. Een temperatuur uit de app geldt tot het volgende blok in het schema (`TADO_MANUAL_UNTIL=next_block`) of tot je de kamer terugzet op schema (`manual`).
+4. Alleen de tado X-lijn wordt nu ondersteund; oudere V3+-installaties gebruiken een andere API.
 
 **Mail**: elke SMTP-server werkt. Voor Gmail gebruik je een *app-wachtwoord*. Testen:
 
@@ -143,6 +152,7 @@ Pushmeldingen hebben **https** nodig. Het makkelijkst is `tailscale serve --bg -
 | Ochtendtip | `PUSH_MORNING_TIME`: het goedkoopste blok van `PUSH_BLOCK_HOURS` uur binnen `PUSH_BLOCK_WINDOW`, het duurste moment, negatieve prijzen, gisteren in het kort, en een paneel dat nog stuk is |
 | Zonnepaneel | direct na de avondcontrole, als een paneel kapot gaat of weer werkt |
 | Negatieve prijs | rond 13:00, als morgen de prijs negatief wordt |
+| Teruglevering | vanaf `CONTRACT_START`: het huis levert al `PUSH_EXPORT_MINUTES` minuten meer dan `PUSH_EXPORT_W` terug (en de batterij is vol). In het stookseizoen met de tip om de verwarming een graad hoger te zetten, en een herinnering om `PUSH_HEAT_BACK_TIME` |
 | Records | `PUSH_EVENING_TIME`: een opwekrecord, een dag die voor minstens 95% zelfvoorzienend was, of elke 500 kWh opgewekt |
 | Weekoverzicht | zondag om `PUSH_WEEKLY_TIME` |
 | Technisch | een apparaat geeft al `OFFLINE_ALERT_MINUTES` minuten niets door (staat standaard uit) |

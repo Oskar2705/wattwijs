@@ -13,6 +13,7 @@ MAX_AGE = {
     "solar": 20 * 60,  # cloud-integraties verversen maar eens per paar minuten
     "heatpump": 10 * 60,
     "aircon": 5 * 60,
+    "heating": 75 * 60,  # tado wordt zuinig uitgelezen vanwege de daglimiet
 }
 
 
@@ -27,6 +28,8 @@ class Source:
     mode: str = ""  # bv. "modbus" / "cloud" voor SolarEdge
     # Alleen voor bronnen die bediend kunnen worden (airco): async control(unit_id, changes) -> unit
     control: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None
+    # Overige acties, bv. {"login": ..., "logout": ...} voor tado
+    actions: dict[str, Callable[[], Awaitable[dict[str, Any]]]] = field(default_factory=dict)
 
     def update(self, **values: Any) -> None:
         self.values.update(values)
@@ -62,10 +65,11 @@ class LiveState:
         self.solar = Source("solar")
         self.heatpump = Source("heatpump")
         self.aircon = Source("aircon")
+        self.heating = Source("heating")
 
     def sources(self) -> dict[str, Source]:
         return {"grid": self.grid, "battery": self.battery, "solar": self.solar, "heatpump": self.heatpump,
-                "aircon": self.aircon}
+                "aircon": self.aircon, "heating": self.heating}
 
     def snapshot(self, now: float | None = None) -> dict[str, Any]:
         """Afgeleide momentwaarden in W. None = onbekend.
@@ -120,6 +124,7 @@ class LiveState:
             "aircon_w": _r(ac),
             "aircon_configured": self.aircon.configured,
             "aircon_on": self.aircon.get("units_on", now),
+            "heating_configured": self.heating.configured,
             "heatpump": {
                 k: self.heatpump.get(k, now)
                 for k in ("heat_output_w", "supply_temperature", "outdoor_temperature", "is_on", "fault_code")

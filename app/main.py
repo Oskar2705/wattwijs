@@ -43,6 +43,8 @@ async def watchdog() -> None:
         for key, src in state.sources().items():
             if not src.configured:
                 continue
+            if key == "heating" and not (src.values.get("tado") or {}).get("linked"):
+                continue  # nog niet gekoppeld: dat is geen storing
             if src.fresh(now):
                 offline_since.pop(key, None)
                 if key in notified:
@@ -66,7 +68,7 @@ async def watchdog() -> None:
 
 
 ROLE_NAMES = {"grid": "slimme meter", "battery": "thuisbatterij", "solar": "zonnepanelen", "heatpump": "warmtepomp",
-              "aircon": "airco's"}
+              "aircon": "airco's", "heating": "verwarming"}
 SELECTED: dict[str, str | None] = {}
 
 
@@ -236,6 +238,65 @@ async def aircon_set(unit_id: str, request: Request) -> dict[str, Any]:
     return unit
 
 
+# ---------------- verwarming (tado) ----------------
+
+
+@app.get("/api/heating")
+def heating_view() -> dict[str, Any]:
+    src = state.heating
+    return {
+        "configured": src.configured,
+        "rooms": src.values.get("rooms", []),
+        "tado": src.values.get("tado") or {},
+        "error": src.last_error,
+        "updated": src.updated,
+    }
+
+
+@app.post("/api/heating/login")
+async def heating_login() -> dict[str, Any]:
+    act = state.heating.actions.get("login")
+    if not state.heating.configured or act is None:
+        raise HTTPException(404, "tado staat niet aan (TADO_ENABLED=1).")
+    try:
+        return await act()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Koppelen starten lukte niet: {exc}") from None
+
+
+@app.post("/api/heating/logout")
+async def heating_logout() -> dict[str, Any]:
+    act = state.heating.actions.get("logout")
+    if act is None:
+        raise HTTPException(404, "tado staat niet aan.")
+    return await act()
+
+
+@app.post("/api/heating/{room_id}")
+async def heating_set(room_id: str, request: Request) -> dict[str, Any]:
+    src = state.heating
+    if not src.configured or src.control is None:
+        raise HTTPException(404, "Er is geen verwarming om te bedienen.")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "Ongeldig verzoek.") from None
+    changes = {k: body.get(k) for k in ("target", "mode") if body.get(k) is not None}
+    if changes.get("mode") not in (None, "schedule", "off"):
+        raise HTTPException(400, "Onbekende stand.")
+    log.info("Verwarming kamer %s: %s", room_id, changes)
+    try:
+        return await asyncio.wait_for(src.control(room_id, changes), timeout=30)
+    except KeyError:
+        raise HTTPException(404, "Deze kamer bestaat niet.") from None
+    except ValueError as exc:
+        raise HTTPException(400, f"Kan niet: {exc}.") from None
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "tado reageert niet. Probeer het zo nog eens.") from None
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, str(exc)) from None
+
+
 @app.get("/api/curve")
 def curve(day: str | None = None) -> dict[str, Any]:
     d = _parse_day(day)
@@ -368,7 +429,17 @@ async def push_unsubscribe(request: Request) -> dict[str, str]:
 async def push_test(request: Request) -> dict[str, Any]:
     body = await request.json()
     endpoint = body.get("endpoint") or ""
-    msg = notifier.build_morning(datetime.now(config.tz)) if body.get("kind") == "morning" else None
+    kind = body.get("kind")
+    msg = None
+    if kind == "morning":
+        msg = notifier.build_morning(datetime.now(config.tz))
+    elif kind == "export":
+        from . import exportwatch
+
+        now_price = ((prices.price_info() or {}).get("now") or {}).get("export")
+        msg = exportwatch.build_message(-1400, 12, now_price, bool(SELECTED.get("battery")), True,
+                                        config.push_heat_back_time)
+        msg = (msg[0] + " (voorbeeld)", msg[1])
     title, text = msg or ("👋 Het werkt!", "Je krijgt voortaan meldingen van Energie Thuis op deze telefoon.")
     ok, detail = await push.send_to(endpoint, title, text, url="/#nu", tag="test")
     if not ok:
