@@ -71,6 +71,8 @@ class Config:
     # Fysieke ligging: rijen gescheiden door ';', panelen van links naar rechts gescheiden door ','
     panel_layout: str = field(default_factory=lambda: _str("PANEL_LAYOUT"))
     panel_check_time: str = field(default_factory=lambda: _str("PANEL_CHECK_TIME", "21:30"))
+    # How often today's per-panel yield is fetched during daylight (the portal itself updates about every 15 min)
+    panel_refresh_minutes: int = field(default_factory=lambda: max(5, _int("PANEL_REFRESH_MINUTES", 15)))
     panel_recovery_mail: bool = field(default_factory=lambda: _bool("PANEL_RECOVERY_MAIL", True))
     panel_backfill_days: int = field(default_factory=lambda: _int("PANEL_BACKFILL_DAYS", 14))
 

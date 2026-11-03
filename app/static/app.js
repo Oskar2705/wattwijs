@@ -708,9 +708,10 @@ function drawPanels() {
   $("#panelVerdict").innerHTML = v;
 
   drawRoof(d);
-  $("#panHint").innerHTML = d.panels.length
-    ? `${d.final ? "" : `Dag nog bezig, controle om ${esc(d.check_time)}`}`
-    : "";
+  const fetched = d.fetched_at ? new Date(d.fetched_at) : null;
+  $("#panHint").innerHTML = !d.panels.length || d.final ? ""
+    : (fetched ? `Bijgewerkt om ${fetched.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}. ` : "")
+      + `Controle om ${esc(d.check_time)}`;
 
   const max = Math.max(1, ...d.panels.map((p) => p.wh || 0));
   const groups = {};
@@ -942,4 +943,10 @@ route();
 pollLive();
 setInterval(() => { if (!document.hidden) pollLive(); }, 5000);
 setInterval(() => { if (!document.hidden && !$("#view-nu").hidden) { loadCurve().catch(() => {}); loadPrices().catch(() => {}); } }, 60000);
+// Zonnepanelen-tab open op vandaag: elke minuut verversen (de server haalt hooguit eens per paar minuten nieuwe data)
+setInterval(() => {
+  if (document.hidden || $("#view-panelen").hidden || !pan.data) return;
+  const last = pan.data.days[pan.data.days.length - 1];
+  if (!pan.day || pan.day === last) loadPanels().catch(() => {});
+}, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pollLive(); });

@@ -254,7 +254,11 @@ def panel_view(day: str | None = None) -> dict[str, Any]:
         r["name"] = panels.display_name(r["name"] or r["serial"])
         r["alert"] = r["serial"] in alerts
     rows.sort(key=lambda r: (r["grp"] or "", panels.natural_key(r["name"])))
+    fetched_at = db.get_kv("panel_fetched_at") or None
+    if d == today().isoformat() and SELECTED.get("panels"):
+        panels.request_refresh()  # the loop throttles this to once per few minutes
     return {
+        "fetched_at": fetched_at if d == today().isoformat() else None,
         "day": d,
         "layout": panels.parse_layout(),
         "days": days,

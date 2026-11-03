@@ -317,7 +317,22 @@ class PanelSource:
 async def fetch_and_store(source: Any, day: date, final: bool) -> None:
     panels = await source.panels()
     energy = await source.panel_energy(day)
-    get_db().save_panel_day(day.isoformat(), panels, energy, final)
+    db = get_db()
+    db.save_panel_day(day.isoformat(), panels, energy, final)
+    if day == datetime.now(config.tz).date():
+        db.set_kv("panel_fetched_at", datetime.now(config.tz).isoformat(timespec="seconds"))
+
+
+# Opening the panel tab asks the loop for fresh data, so you don't wait for the next round.
+_wake: asyncio.Event | None = None
+_loop: asyncio.AbstractEventLoop | None = None
+MIN_ON_DEMAND = timedelta(minutes=3)
+
+
+def request_refresh() -> None:
+    """Thread-safe: may be called from a sync FastAPI endpoint."""
+    if _loop is not None and _wake is not None:
+        _loop.call_soon_threadsafe(_wake.set)
 
 
 def _check_time() -> tuple[int, int]:
@@ -345,8 +360,11 @@ async def backfill(source: Any) -> int:
 
 
 async def run(source: Any) -> None:
+    global _wake, _loop
+    _wake, _loop = asyncio.Event(), asyncio.get_running_loop()
     db = get_db()
     tz = config.tz
+    every = timedelta(minutes=config.panel_refresh_minutes)
     try:
         revalidate_open_alerts()
     except Exception:  # noqa: BLE001
@@ -370,9 +388,14 @@ async def run(source: Any) -> None:
                 db.set_kv("panel_check_done", today_s)
                 log.info("Paneelcontrole %s klaar: %s", today_s, msgs or "alles in orde")
                 last_refresh = now
-            elif 6 <= now.hour <= 22 and (last_refresh is None or now - last_refresh > timedelta(minutes=55)):
-                last_refresh = now
-                await fetch_and_store(source, now.date(), final=False)
+            else:
+                asked = _wake.is_set()
+                _wake.clear()
+                since = None if last_refresh is None else now - last_refresh
+                daylight = 6 <= now.hour <= 22
+                if since is None or (daylight and since >= every) or (asked and since >= MIN_ON_DEMAND):
+                    last_refresh = now
+                    await fetch_and_store(source, now.date(), final=False)
             db.set_kv("panel_error", "")
         except asyncio.CancelledError:
             raise
@@ -380,4 +403,7 @@ async def run(source: Any) -> None:
             msg = f"{type(exc).__name__}: {exc}"
             log.warning("Paneeldata ophalen mislukt: %s", msg)
             db.set_kv("panel_error", msg)
-        await asyncio.sleep(300)
+        try:
+            await asyncio.wait_for(_wake.wait(), timeout=60)
+        except asyncio.TimeoutError:
+            pass
