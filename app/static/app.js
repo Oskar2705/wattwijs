@@ -237,7 +237,8 @@ function setFlow(id, watts, reverse) {
 function renderLive(d) {
   live = d;
   const n = d.now;
-  $("#siteName").textContent = `Energie ${d.site_name}`;
+  $("#siteName").textContent = d.site_name && d.site_name !== "Thuis" ? d.site_name : "";
+  document.title = $("#siteName").textContent ? `Wattwijs ${$("#siteName").textContent}` : "Wattwijs";
   $("#demoNote").hidden = !d.demo;
 
   const anyOnline = Object.values(d.sources).some((s) => s.configured && s.online);
@@ -389,7 +390,7 @@ async function pollLive() {
     renderLive(await getJSON("/api/live"));
   } catch (e) {
     $("#pulse").className = "pulse stale";
-    $("#pulseText").textContent = "Geen verbinding met de energiemonitor";
+    $("#pulseText").textContent = "Geen verbinding met Wattwijs";
   }
 }
 
@@ -878,11 +879,11 @@ async function renderPush() {
   }
   if (isIOS && !isStandalone()) {
     box.innerHTML = `<h3>Eerst de app op je beginscherm zetten</h3>
-      <p>Op een iPhone kunnen meldingen alleen binnenkomen als Energie Thuis als app op het beginscherm staat.</p>
+      <p>Op een iPhone kunnen meldingen alleen binnenkomen als Wattwijs als app op het beginscherm staat.</p>
       <ol>
         <li>Tik in Safari op de <strong>drie puntjes (•••)</strong> naast de adresbalk en kies <strong>Deel</strong>. Op een oudere iPhone tik je direct op de deelknop (het vierkantje met het pijltje omhoog).</li>
         <li>Scroll omlaag en kies <strong>Zet op beginscherm</strong>. Laat <strong>Open als webapp</strong> aan staan en tik op <strong>Voeg toe</strong>.</li>
-        <li>Open Energie Thuis via het nieuwe icoon en kom terug naar dit scherm (het belletje rechtsboven).</li>
+        <li>Open Wattwijs via het nieuwe icoon en kom terug naar dit scherm (het belletje rechtsboven).</li>
       </ol>
       <p>Zie je "Zet op beginscherm" niet? Scroll in het deelmenu helemaal naar beneden, tik op <strong>Wijzig taken</strong> en voeg het toe. Gebruik Safari zelf, niet de ingebouwde browser van WhatsApp of Mail.</p>`;
     return;

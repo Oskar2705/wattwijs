@@ -258,7 +258,7 @@ def _ids() -> tuple[str, str]:
         op = str(uuid.uuid4())
         db.set_kv("wfrac_operator_id", op)
     if not dev or len(dev) > MAX_DEVICE_ID:
-        dev = f"energiemonitor-{uuid.uuid4().hex[:12]}"
+        dev = f"wattwijs-{uuid.uuid4().hex[:12]}"
         db.set_kv("wfrac_device_id", dev)
     return op, dev
 

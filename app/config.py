@@ -35,7 +35,7 @@ class Config:
     tz_name: str = field(default_factory=lambda: _str("TZ", "Europe/Amsterdam"))
     data_dir: str = field(default_factory=lambda: _str("DATA_DIR", "/data"))
     app_url: str = field(default_factory=lambda: _str("APP_URL"))
-    site_name: str = field(default_factory=lambda: _str("SITE_NAME", "Thuis"))
+    site_name: str = field(default_factory=lambda: _str("SITE_NAME", ""))  # naam van het huis, naast "Wattwijs"
     basic_auth_user: str = field(default_factory=lambda: _str("BASIC_AUTH_USER"))
     basic_auth_pass: str = field(default_factory=lambda: _str("BASIC_AUTH_PASS"))
 

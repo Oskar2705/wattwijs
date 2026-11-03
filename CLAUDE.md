@@ -1,4 +1,4 @@
-# Energiemonitor – notes for coding agents
+# Wattwijs – notes for coding agents
 
 Self-hosted home energy dashboard: FastAPI back end in `app/`, plain HTML/CSS/JS front end in `app/static/` (no build step, no framework), SQLite in `DATA_DIR`.
 

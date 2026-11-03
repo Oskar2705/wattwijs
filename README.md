@@ -1,6 +1,6 @@
-# Energiemonitor
+# Wattwijs
 
-*[Nederlandse versie](README.nl.md)*
+*Wattwijs: be wise with your watts. [Nederlandse versie](README.nl.md)*
 
 A self-hosted web app that shows everything happening on a home's electricity connection in one place: solar production, house and heat pump consumption, the home battery charging or discharging, and import or export through the smart meter. It runs on a Raspberry Pi or home server and reads the devices on your local network wherever it can.
 
@@ -9,6 +9,8 @@ It was built for one Dutch household with a heat pump, a home battery, solar pan
 | Now | History | Solar panels |
 |---|---|---|
 | ![Live view](docs/screenshots/nu.png) | ![History](docs/screenshots/geschiedenis.png) | ![Panel check](docs/screenshots/panelen.png) |
+
+![Climate](docs/screenshots/klimaat.png)
 
 ## Features
 
@@ -48,8 +50,8 @@ Every role is optional. Without a battery, the app works without one. Without a 
 You need Docker with Compose.
 
 ```bash
-git clone https://github.com/<you>/energiemonitor.git
-cd energiemonitor
+git clone https://github.com/<you>/wattwijs.git
+cd wattwijs
 cp .env.example .env        # DEMO=1 by default
 mkdir data
 docker compose up -d --build
@@ -105,7 +107,7 @@ The app has to reach the battery, the P1 dongle and (optionally) the inverter **
 **Email**: any SMTP server works. For Gmail, use an *app password*. Send a test with:
 
 ```bash
-docker compose exec energiemonitor python -m app.testmail
+docker compose exec wattwijs python -m app.testmail
 ```
 
 `ALERT_TO` receives panel and price alerts. `ADMIN_TO` receives technical alerts, such as a device that hasn't reported for 2 hours.
@@ -135,7 +137,7 @@ During the day the tiles are refreshed every `PANEL_REFRESH_MINUTES` (15), and r
 - **Battery value** is an estimate: discharged energy at the import price, minus charging at either the import price (from the grid) or the feed-in price (from solar surplus). It is meaningful over a month, not over a single day.
 - The amounts are variable costs only. Fixed delivery costs, grid fees and the yearly energy tax reduction are not included.
 - Amounts before `CONTRACT_START` are shown as an indication.
-- To compare the prices component by component with your supplier's app, run `docker compose exec energiemonitor python -m app.checkprices [YYYY-MM-DD]`.
+- To compare the prices component by component with your supplier's app, run `docker compose exec wattwijs python -m app.checkprices [YYYY-MM-DD]`.
 
 ## Home screen app and push notifications
 

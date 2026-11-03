@@ -30,9 +30,9 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = { title: "Energie Thuis", body: event.data ? event.data.text() : "" };
+    data = { title: "Wattwijs", body: event.data ? event.data.text() : "" };
   }
-  const title = data.title || "Energie Thuis";
+  const title = data.title || "Wattwijs";
   event.waitUntil(
     self.registration.showNotification(title, {
       body: data.body || "",

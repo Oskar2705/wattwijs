@@ -1,7 +1,7 @@
 services:
-  energiemonitor:
+  wattwijs:
     build: .
-    container_name: energiemonitor
+    container_name: wattwijs
     restart: unless-stopped
     env_file: .env
     ports:

@@ -77,6 +77,8 @@ button, input { font: inherit; color: inherit; }
   max-width: 1120px; margin: 0 auto; padding: 1.4rem 1.25rem .6rem;
 }
 .brand h1 { font-size: 1.7rem; letter-spacing: -.01em; }
+.brand h1 .site { font-weight: 400; color: var(--ink-3); margin-left: .45rem; }
+.brand h1 .site:empty { display: none; }
 .pulse { margin: .15rem 0 0; color: var(--ink-3); font-size: .85rem; display: flex; align-items: center; gap: .45rem; }
 .pulse .dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--ink-3); }
 .pulse.live .dot { background: var(--good); }
@@ -375,3 +377,5 @@ tfoot td { font-weight: 700; border-top: 2px solid var(--rule); }
 a.btn { display: inline-block; text-decoration: none; }
 .btn.comfort { width: 100%; text-align: left; display: grid; gap: .1rem; padding: .7rem 1.1rem; border-radius: 14px; background: #9E3369; border-color: #9E3369; color: #fff; }
 .btn.comfort small { font-weight: 400; font-size: .8rem; opacity: .9; }
+/* Met airco loopt er een lijn linksonder; zet de tekst van het net dan boven het bolletje. */
+#flow:not(.no-ac) .node.grid text { transform: translateY(-116px); }

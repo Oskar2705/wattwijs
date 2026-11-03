@@ -71,7 +71,7 @@ def public_key() -> str:
 def _contact() -> str:
     c = config.push_contact or config.admin_to.split(",")[0].strip() or config.mail_from
     if not c:
-        return "mailto:energiemonitor@example.invalid"
+        return "mailto:wattwijs@example.invalid"
     return c if c.startswith(("mailto:", "https:")) else f"mailto:{c}"
 
 

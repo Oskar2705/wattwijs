@@ -1,5 +1,5 @@
 """Vergelijk de prijs van nu met de Frank-app:
-docker compose exec energiemonitor python -m app.checkprices [JJJJ-MM-DD]
+docker compose exec wattwijs python -m app.checkprices [JJJJ-MM-DD]
 """
 
 import asyncio

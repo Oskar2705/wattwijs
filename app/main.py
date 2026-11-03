@@ -1,4 +1,4 @@
-"""Energiemonitor - webserver en achtergrondtaken."""
+"""Wattwijs - webserver en achtergrondtaken."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from .db import ENERGY_COLS, consumption_wh, get_db, month_days, self_sufficienc
 from .state import state
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("energiemonitor")
+log = logging.getLogger("wattwijs")
 logging.getLogger("solaredge_web").setLevel(logging.CRITICAL)  # fouten loggen we zelf, zonder lange traceback
 STATIC = Path(__file__).parent / "static"
 
@@ -50,7 +50,7 @@ async def watchdog() -> None:
                 if key in notified:
                     notified.discard(key)
                     await push.broadcast("tech", f"{names[key]} is weer bereikbaar", "Er komen weer gegevens binnen.")
-                    await mailer.send(config.split(config.admin_to), f"Energiemonitor: {names[key]} is weer bereikbaar",
+                    await mailer.send(config.split(config.admin_to), f"Wattwijs: {names[key]} is weer bereikbaar",
                                       f"{names[key]} levert weer gegevens." + mailer.footer())
                 continue
             offline_since.setdefault(key, now)
@@ -60,7 +60,7 @@ async def watchdog() -> None:
                                      f"Al {config.offline_alert_minutes} minuten niets ontvangen. {src.last_error or ''}".strip())
                 await mailer.send(
                     config.split(config.admin_to),
-                    f"Energiemonitor: {names[key]} geeft geen gegevens",
+                    f"Wattwijs: {names[key]} geeft geen gegevens",
                     f"Al {config.offline_alert_minutes} minuten geen gegevens van {names[key]}.\n"
                     f"Laatste foutmelding: {src.last_error or 'onbekend'}" + mailer.footer(),
                 )
@@ -109,7 +109,7 @@ async def lifespan(app: FastAPI):
     recorder.recorder.flush()
 
 
-app = FastAPI(title="Energiemonitor", lifespan=lifespan)
+app = FastAPI(title="Wattwijs", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -126,7 +126,7 @@ async def basic_auth(request: Request, call_next):
             except Exception:  # noqa: BLE001
                 ok = False
         if not ok:
-            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Energie"'})
+            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Wattwijs"'})
     return await call_next(request)
 
 
@@ -466,7 +466,7 @@ async def push_test(request: Request) -> dict[str, Any]:
         msg = exportwatch.build_message(-1400, 12, now_price, bool(SELECTED.get("battery")), True,
                                         config.push_heat_back_time)
         msg = (msg[0] + " (voorbeeld)", msg[1])
-    title, text = msg or ("👋 Het werkt!", "Je krijgt voortaan meldingen van Energie Thuis op deze telefoon.")
+    title, text = msg or ("👋 Het werkt!", "Je krijgt voortaan meldingen van Wattwijs op deze telefoon.")
     ok, detail = await push.send_to(endpoint, title, text, url="/#nu", tag="test")
     if not ok:
         raise HTTPException(502, f"versturen mislukt: {detail}")

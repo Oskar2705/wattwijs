@@ -1,6 +1,6 @@
-# Energiemonitor
+# Wattwijs
 
-*[English version](README.md)*
+*Wattwijs: wijs omgaan met je stroom. [English version](README.md)*
 
 Een webapp om zelf te hosten, die op één plek laat zien wat er op de stroomaansluiting thuis gebeurt: opwek van de zonnepanelen, verbruik van het huis en de warmtepomp, laden en ontladen van de thuisbatterij, en afname en teruglevering via de slimme meter. De app draait op een Raspberry Pi of thuisserver en leest de apparaten waar mogelijk lokaal uit.
 
@@ -9,6 +9,8 @@ Hij is gemaakt voor een Nederlands huishouden met een warmtepomp, een thuisbatte
 | Nu | Geschiedenis | Zonnepanelen |
 |---|---|---|
 | ![Live](docs/screenshots/nu.png) | ![Geschiedenis](docs/screenshots/geschiedenis.png) | ![Paneelcontrole](docs/screenshots/panelen.png) |
+
+![Klimaat](docs/screenshots/klimaat.png)
 
 ## Wat kan het?
 
@@ -46,8 +48,8 @@ Elke rol is optioneel. Zonder batterij werkt de app gewoon zonder batterij. Zond
 Je hebt Docker met Compose nodig.
 
 ```bash
-git clone https://github.com/<jij>/energiemonitor.git
-cd energiemonitor
+git clone https://github.com/<jij>/wattwijs.git
+cd wattwijs
 cp .env.example .env        # staat standaard op DEMO=1
 mkdir data
 docker compose up -d --build
@@ -103,7 +105,7 @@ De app moet de batterij, de P1-dongle en eventueel de omvormer **op het lokale n
 **Mail**: elke SMTP-server werkt. Voor Gmail gebruik je een *app-wachtwoord*. Testen:
 
 ```bash
-docker compose exec energiemonitor python -m app.testmail
+docker compose exec wattwijs python -m app.testmail
 ```
 
 `ALERT_TO` krijgt de paneel- en prijsmeldingen. `ADMIN_TO` krijgt technische meldingen, zoals een apparaat dat al 2 uur niets doorgeeft.
@@ -133,7 +135,7 @@ Overdag worden de tegels elke `PANEL_REFRESH_MINUTES` (15) minuten ververst, en 
 - **Batterij leverde op** is een schatting: ontladen stroom tegen de afnameprijs, min het laden tegen de afnameprijs (uit het net) of de terugleverprijs (uit zonne-overschot). Kijk naar dit getal over een maand, niet over één dag.
 - De bedragen zijn alleen variabele kosten. Vaste leveringskosten, netbeheerkosten en de jaarlijkse vermindering energiebelasting zitten er niet in.
 - Bedragen vóór `CONTRACT_START` zijn een indicatie.
-- Wil je de prijzen per onderdeel vergelijken met de app van je leverancier, gebruik dan `docker compose exec energiemonitor python -m app.checkprices [JJJJ-MM-DD]`.
+- Wil je de prijzen per onderdeel vergelijken met de app van je leverancier, gebruik dan `docker compose exec wattwijs python -m app.checkprices [JJJJ-MM-DD]`.
 
 ## App op het beginscherm en pushmeldingen
 
