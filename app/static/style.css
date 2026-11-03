@@ -403,3 +403,4 @@ a.btn { display: inline-block; text-decoration: none; }
 .alert-strip.verdict { padding-right: 3rem; }
 .tabs .sm { display: none; }
 @media (max-width: 520px) { .tabs.five .lg { display: none; } .tabs.five .sm { display: inline; } }
+.btn.comfort.stop { background: var(--surface); color: var(--ink); border: 2px solid #9E3369; }

@@ -1176,8 +1176,11 @@ function heatModeLine(r) {
 function comfortBtn(r, dis) {
   const c = (heat.data && heat.data.comfort) || { temp: 21, hours: 3 };
   const warming = r.mode === "manual" && r.manual_type === "TIMER" && r.manual_until;
-  const label = warming ? `Warmt op tot ${clock(r.manual_until)}` : `Opwarmen naar ${nl1.format(c.temp)} °C`;
-  return `<button class="btn comfort" data-act="hcomfort" ${dis}>${label}<small>${warming ? "tik om te verlengen" : `${nl0.format(c.hours)} uur, daarna weer volgens schema`}</small></button>`;
+  // Tijdens het opwarmen wordt dezelfde knop "Stop opwarmen": per ongeluk getikt is zo hersteld.
+  if (warming) {
+    return `<button class="btn comfort stop" data-act="hschedule" ${dis}>Stop opwarmen<small>warmt nu op tot ${clock(r.manual_until)}; tik om terug te gaan naar het schema</small></button>`;
+  }
+  return `<button class="btn comfort" data-act="hcomfort" ${dis}>Opwarmen naar ${nl1.format(c.temp)} °C<small>${nl0.format(c.hours)} uur, daarna weer volgens schema</small></button>`;
 }
 
 function heatCard(r) {
@@ -1278,7 +1281,7 @@ function initHeating() {
     if (b.dataset.act === "hup") heatNudge(r, 0.5);
     else if (b.dataset.act === "hdown") heatNudge(r, -0.5);
     else if (b.dataset.act === "hcomfort") heatCommand(r.id, { mode: "comfort" }, (x) => `Warmt op naar ${nl1.format(x.target)} °C tot ${clock(x.manual_until)}.`);
-    else if (b.dataset.act === "hschedule") heatCommand(r.id, { mode: "schedule" }, () => "Weer volgens schema.");
+    else if (b.dataset.act === "hschedule") heatCommand(r.id, { mode: "schedule" }, () => b.classList.contains("stop") ? "Opwarmen gestopt, weer volgens schema." : "Weer volgens schema.");
     else if (b.dataset.act === "hoff") heatCommand(r.id, { mode: "off" }, () => "Verwarming staat uit in deze kamer.");
   });
   $("#heatNote").addEventListener("click", async (e) => {
