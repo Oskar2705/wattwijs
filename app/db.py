@@ -10,8 +10,8 @@ from typing import Any, Iterable
 
 from .config import config
 
-ENERGY_COLS = ["import_wh", "export_wh", "solar_wh", "charge_wh", "discharge_wh", "heatpump_wh", "house_wh"]
-POWER_COLS = ["grid_w", "solar_w", "battery_w", "house_w", "heatpump_w", "soc"]
+ENERGY_COLS = ["import_wh", "export_wh", "solar_wh", "charge_wh", "discharge_wh", "heatpump_wh", "house_wh", "aircon_wh"]
+POWER_COLS = ["grid_w", "solar_w", "battery_w", "house_w", "heatpump_w", "soc", "aircon_w"]
 
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS minute (
@@ -75,6 +75,11 @@ class DB:
         with self.lock:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.executescript(SCHEMA)
+            # Kolommen die later zijn bijgekomen (bv. aircon_wh) toevoegen aan een bestaande database.
+            have = {r[1] for r in self.conn.execute("PRAGMA table_info(minute)")}
+            for c in [*ENERGY_COLS, *POWER_COLS]:
+                if c not in have:
+                    self.conn.execute(f"ALTER TABLE minute ADD COLUMN {c} REAL")
             self.conn.commit()
 
     # ---- algemeen ----

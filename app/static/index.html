@@ -25,6 +25,7 @@
       <a href="#nu" data-view="nu">Nu</a>
       <a href="#geschiedenis" data-view="geschiedenis">Geschiedenis</a>
       <a href="#panelen" data-view="panelen">Zonnepanelen <span class="badge" id="panelBadge" hidden>!</span></a>
+      <a href="#airco" data-view="airco" id="acTab" hidden>Airco</a>
     </nav>
     <a href="#meldingen" data-view="meldingen" class="bell" aria-label="Meldingen" title="Meldingen">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
@@ -38,18 +39,20 @@
     <section id="view-nu" class="view">
       <div class="now-grid">
         <figure class="flow" aria-labelledby="flowCaption">
-          <svg id="flow" viewBox="0 0 380 330" role="img" aria-describedby="story">
+          <svg id="flow" class="no-ac" viewBox="0 0 380 330" role="img" aria-describedby="story">
             <g class="lines">
               <path id="l-sun" d="M190 72 V 128" />
               <path id="l-grid" d="M86 165 H 150" />
               <path id="l-batt" d="M230 165 H 294" />
               <path id="l-hp" d="M190 205 V 258" />
+              <path id="l-ac" class="ac-part" d="M162 192 L 78 266" />
             </g>
             <g class="flows">
               <path id="f-sun" d="M190 72 V 128" />
               <path id="f-grid" d="M86 165 H 150" />
               <path id="f-batt" d="M230 165 H 294" />
               <path id="f-hp" d="M190 205 V 258" />
+              <path id="f-ac" class="ac-part" d="M162 192 L 78 266" />
             </g>
 
             <g class="node sun" transform="translate(190 42)">
@@ -85,6 +88,13 @@
               <g class="icon"><rect x="-14" y="-11" width="28" height="22" rx="2"/><circle cx="-3" r="6"/><path d="M8-6v12"/></g>
               <text x="42" y="-6" class="lbl">Warmtepomp</text>
               <text x="42" y="16" class="val" id="v-hp">–</text>
+            </g>
+
+            <g class="node ac ac-part" transform="translate(56 288)">
+              <circle r="30" />
+              <g class="icon"><rect x="-15" y="-9" width="30" height="12" rx="2"/><path d="M-10 0h20 M-9 9l-2 5 M0 9v6 M9 9l2 5"/></g>
+              <text y="52" class="lbl" text-anchor="middle">Airco</text>
+              <text y="74" class="val" text-anchor="middle" id="v-ac">–</text>
             </g>
           </svg>
           <figcaption id="flowCaption" class="visually-hidden">Stroomschema van zon, net, batterij, huis en warmtepomp</figcaption>
@@ -193,6 +203,16 @@
         <h3>Eerdere meldingen</h3>
         <ul id="alertHistory" class="alert-history"></ul>
       </div>
+    </section>
+    <!-- ============ AIRCO ============ -->
+    <section id="view-airco" class="view" hidden>
+      <div class="ac-head">
+        <h2 class="section-title">Airco's</h2>
+        <p class="hint" id="acSummary"></p>
+      </div>
+      <p class="ac-error" id="acError" hidden></p>
+      <div class="ac-units" id="acUnits"></div>
+      <p class="hint ac-note" id="acNote">Het verbruik is een schatting: de airco's geven zelf alleen door hoeveel ze per run verbruiken, in stappen van 0,25 kWh. Na een opdracht kan de Smart M-Air-app de airco een minuut lang niet bedienen.</p>
     </section>
     <!-- ============ MELDINGEN ============ -->
     <section id="view-meldingen" class="view" hidden>

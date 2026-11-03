@@ -62,6 +62,13 @@ class Config:
     # DeWarmte
     dw_username: str = field(default_factory=lambda: _str("DEWARMTE_USERNAME"))
     dw_password: str = field(default_factory=lambda: _str("DEWARMTE_PASSWORD"))
+    # Airco's (Mitsubishi Heavy WF-RAC): "Name=host[:port];Name=host[:port]"
+    airco_units: str = field(default_factory=lambda: _str("AIRCO_UNITS"))
+    # 0 = alleen uitlezen, het tabblad Airco toont dan geen knoppen
+    airco_control: bool = field(default_factory=lambda: _bool("AIRCO_CONTROL", True))
+    airco_poll_s: float = field(default_factory=lambda: max(30.0, _float("AIRCO_POLL_SECONDS", 60)))
+    # Geschat vermogen van een draaiende compressor tot de unit zelf een meting heeft gegeven
+    airco_default_w: float = field(default_factory=lambda: _float("AIRCO_DEFAULT_W", 500))
     dw_poll_s: float = field(default_factory=lambda: _float("DEWARMTE_POLL_SECONDS", 60))
 
     # Paneelcontrole

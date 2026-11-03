@@ -17,7 +17,8 @@ Hij is gemaakt voor een Nederlands huishouden met een warmtepomp, een thuisbatte
 - **Controle per zonnepaneel.** Elke avond wordt elk paneel vergeleken met de panelen naast hem in dezelfde rij. Blijft er een achter of valt er een uit, dan krijg je een mail en een pushmelding. Vaste schaduw leert de app vanzelf, dus die geeft geen valse meldingen. Het dak wordt getekend zoals in het SolarEdge-portaal.
 - **Dynamische prijzen** per kwartier, met kosten en opbrengst in euro's, het goedkoopste blok van 2 uur en waarschuwingen voor negatieve prijzen.
 - **Installeerbare webapp met pushmeldingen**, ook op de iPhone: een ochtendtip met het goedkoopste moment voor de vaatwasser, paneelmeldingen, records en een weekoverzicht.
-- **Alleen lezen.** De app verandert nooit een instelling op een apparaat.
+- **Airco's**: geschat verbruik per unit en een tabblad om ze aan en uit te zetten en de stand en temperatuur te kiezen.
+- **Standaard alleen lezen.** De app verandert nooit een instelling op een apparaat, behalve de airco's als iemand het tabblad Airco gebruikt (uit te zetten met `AIRCO_CONTROL=0`).
 - **Demomodus** met nepgegevens, om het zonder apparaten te proberen.
 
 ## Ondersteunde apparaten
@@ -33,6 +34,7 @@ Per *rol* is er één koppeling actief. De app kiest die automatisch op basis va
 | `solar` | `solaredge_cloud` | SolarEdge-omvormer | Monitoringportaal, elke 2 minuten |
 | `panels` | `solaredge` | SolarEdge-optimizers (per paneel) | Monitoringportaal |
 | `heatpump` | `dewarmte` | DeWarmte (Pomp AO, MP, T, Heatcycle) | Cloud-API van mydewarmte.com |
+| `aircon` | `wfrac` | Mitsubishi Heavy Industries met wifi-module WF-RAC (Smart M-Air-app) | Lokale API, poort 51443 |
 | `prices` | `frank` | Frank Energie | Openbare API, geen login |
 | alle | `demo` | Gesimuleerd huishouden | — |
 
@@ -79,6 +81,14 @@ De app moet de batterij, de P1-dongle en eventueel de omvormer **op het lokale n
 3. Aanbevolen: laat Modbus TCP aanzetten op de omvormer (SetApp → Communicatie → LAN → Modbus TCP, poort 1502; meestal doet de installateur dit) en vul `SOLAREDGE_MODBUS_HOST` in. De live opwek ververst dan elke 5 seconden in plaats van elke 2 minuten.
 
 **DeWarmte**: hetzelfde e-mailadres en wachtwoord als op mydewarmte.com.
+
+**Airco's** (`AIRCO_UNITS`)
+
+1. Elke binnenunit heeft de wifi-module WF-RAC nodig en moet al werken in de Smart M-Air-app.
+2. Geef elke binnenunit een vast IP-adres en zet ze in `AIRCO_UNITS=Woonkamer=192.168.1.40;Slaapkamer=192.168.1.41`. Bij een multisplit is dat één regel per binnenunit.
+3. Bij het eerste contact meldt de app zich op elke unit aan als extra gebruiker, net als een tweede telefoon. Meldt de unit dat er geen plek meer is, verwijder dan een oude koppeling in de Smart M-Air-app.
+4. De units geven geen vermogen in watt door. De app schat het per unit uit of de compressor draait en uit de energieteller van de unit, die telt in stappen van 0,25 kWh. Zie het als een indicatie; voor exacte cijfers zet je een kWh-meter op de airco-groep.
+5. Na een opdracht houdt de unit de app 60 seconden vast, dus de Smart M-Air-app kan die unit dan een minuut niet bedienen. Wil je alleen uitlezen, zet dan `AIRCO_CONTROL=0`.
 
 **Mail**: elke SMTP-server werkt. Voor Gmail gebruik je een *app-wachtwoord*. Testen:
 
@@ -163,7 +173,7 @@ De back-end is FastAPI (`app/`), de voorkant gewone HTML, CSS en JavaScript (`ap
 
 ## Kanttekeningen
 
-- De koppelingen met de batterij, DeWarmte en het SolarEdge-portaal gebruiken **onofficiële** interfaces, dezelfde als de Home Assistant-integraties uit de community. Na een firmware- of portaalupdate kan er iets breken. De app blijft dan draaien en toont de fout onderaan.
+- De koppelingen met de batterij, DeWarmte, de airco's en het SolarEdge-portaal gebruiken **onofficiële** interfaces, dezelfde als de Home Assistant-integraties uit de community. Na een firmware- of portaalupdate kan er iets breken. De app blijft dan draaien en toont de fout onderaan.
 - De prijs-API van Frank Energie is openbaar, maar niet officieel gedocumenteerd.
 - Dit is een hobbyproject, niet verbonden aan een van de genoemde merken.
 
@@ -175,6 +185,7 @@ De protocollen zijn eerst door anderen uitgezocht:
 - [ronald-willems/dewarmte-homeassistant](https://github.com/ronald-willems/dewarmte-homeassistant) voor de DeWarmte-API
 - [solaredge-web](https://pypi.org/project/solaredge-web/) en [solaredged](https://pypi.org/project/solaredged/) voor SolarEdge
 - [python-frank-energie](https://github.com/HiDiHo01/python-frank-energie) voor de query van Frank Energie
+- [pywfrac](https://pypi.org/project/pywfrac/) en [blues-sechseck/Mitsubishi-WF-RAC-Integration](https://github.com/blues-sechseck/Mitsubishi-WF-RAC-Integration) voor het protocol van de Mitsubishi Heavy-airco's
 
 Het lettertype is [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/) van het Braille Institute, onder de SIL Open Font License.
 

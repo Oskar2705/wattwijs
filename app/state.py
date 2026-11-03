@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 # Hoe lang een waarde geldig blijft zonder nieuwe meting (seconden).
 MAX_AGE = {
@@ -12,6 +12,7 @@ MAX_AGE = {
     "battery": 60,
     "solar": 20 * 60,  # cloud-integraties verversen maar eens per paar minuten
     "heatpump": 10 * 60,
+    "aircon": 5 * 60,
 }
 
 
@@ -24,6 +25,8 @@ class Source:
     last_error: str | None = None
     last_error_at: float | None = None
     mode: str = ""  # bv. "modbus" / "cloud" voor SolarEdge
+    # Alleen voor bronnen die bediend kunnen worden (airco): async control(unit_id, changes) -> unit
+    control: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None
 
     def update(self, **values: Any) -> None:
         self.values.update(values)
@@ -58,9 +61,11 @@ class LiveState:
         self.battery = Source("battery")
         self.solar = Source("solar")
         self.heatpump = Source("heatpump")
+        self.aircon = Source("aircon")
 
     def sources(self) -> dict[str, Source]:
-        return {"grid": self.grid, "battery": self.battery, "solar": self.solar, "heatpump": self.heatpump}
+        return {"grid": self.grid, "battery": self.battery, "solar": self.solar, "heatpump": self.heatpump,
+                "aircon": self.aircon}
 
     def snapshot(self, now: float | None = None) -> dict[str, Any]:
         """Afgeleide momentwaarden in W. None = onbekend.
@@ -69,7 +74,8 @@ class LiveState:
           grid_w     + = afname van het net, - = teruglevering
           battery_w  + = batterij laadt,     - = batterij ontlaadt
           solar_w    totale opwek (SolarEdge + eventuele panelen op de batterij)
-          house_w    totaal verbruik van het huis (incl. warmtepomp)
+          house_w    totaal verbruik van het huis (incl. warmtepomp en airco's)
+          aircon_w   geschat verbruik van alle airco's samen
         """
         now = now or time.time()
         # Netvermogen: bij voorkeur rechtstreeks van de meter, anders via de batterij.
@@ -84,6 +90,7 @@ class LiveState:
         soc = self.battery.get("soc", now)
         se = self.solar.get("power_w", now)
         hp = self.heatpump.get("power_w", now)
+        ac = self.aircon.get("power_w", now)
 
         se_known = se is not None or not self.solar.configured
         solar = None
@@ -96,7 +103,7 @@ class LiveState:
 
         other = None
         if house is not None and hp is not None:
-            other = max(house - hp, 0.0)
+            other = max(house - hp - (ac or 0.0), 0.0)
 
         return {
             "ts": now,
@@ -110,6 +117,9 @@ class LiveState:
             "house_w": _r(house),
             "heatpump_w": _r(hp),
             "other_w": _r(other),
+            "aircon_w": _r(ac),
+            "aircon_configured": self.aircon.configured,
+            "aircon_on": self.aircon.get("units_on", now),
             "heatpump": {
                 k: self.heatpump.get(k, now)
                 for k in ("heat_output_w", "supply_temperature", "outdoor_temperature", "is_on", "fault_code")

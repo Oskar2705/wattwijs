@@ -38,10 +38,10 @@ def test_costs_join_minutes_with_quarter_prices():
     # 10 minuten: 100 Wh afname per minuut, daarna 10 minuten 200 Wh teruglevering (zelfde kwartier? nee: 2e kwartier zonder prijs)
     rows = []
     for i in range(10):
-        rows.append((ts + 60 * i, "2026-11-10", 13, 100.0, 0.0, 0, 50.0, 20.0, 0, 100, None, None, None, None, None, None))
+        rows.append((ts + 60 * i, "2026-11-10", 13, 100.0, 0.0, 0, 50.0, 20.0, 0, 100, 0, None, None, None, None, None, None, None))
     for i in range(3):
-        rows.append((ts + 600 + 60 * i, "2026-11-10", 13, 0.0, 200.0, 0, 0, 0, 0, 0, None, None, None, None, None, None))
-    rows.append((ts + 1000, "2026-11-10", 13, 100.0, 0.0, 0, 0, 0, 0, 0, None, None, None, None, None, None))  # 2e kwartier, geen prijs
+        rows.append((ts + 600 + 60 * i, "2026-11-10", 13, 0.0, 200.0, 0, 0, 0, 0, 0, 0, None, None, None, None, None, None, None))
+    rows.append((ts + 1000, "2026-11-10", 13, 100.0, 0.0, 0, 0, 0, 0, 0, 0, None, None, None, None, None, None, None))  # 2e kwartier, geen prijs
     db.write_minutes(rows)
     t = db.totals_for_day("2026-11-10")
     # afname 1000 Wh x 0,30 = 0,30 (de minuut zonder prijs telt niet mee)

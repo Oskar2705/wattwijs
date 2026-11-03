@@ -30,7 +30,7 @@ const dayWord = (ts) => {
 const pct = (v) => (v == null ? "–" : `${nl0.format(v)}%`);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-const COLORS = { sun: "var(--sun)", grid: "var(--grid)", batt: "var(--batt)", house: "var(--house)", hp: "var(--hp)" };
+const COLORS = { sun: "var(--sun)", grid: "var(--grid)", batt: "var(--batt)", house: "var(--house)", hp: "var(--hp)", ac: "var(--ac)" };
 
 function el(tag, attrs = {}, parent) {
   const n = document.createElementNS(SVGNS, tag);
@@ -138,7 +138,7 @@ function lineChart(host, { x, series, x0, x1, yFmt, xTickFmt, xTicks, tooltip })
       pen = true;
       lastPt = [sx(x[i]), sy(v)];
     });
-    el("path", { d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }, f.svg);
+    el("path", { d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke", ...(s.dash ? { "stroke-dasharray": "6 4" } : {}) }, f.svg);
     if (lastPt) labels.push({ y: lastPt[1], x: lastPt[0], s });
   }
   // directe labels aan het eind van elke lijn, botsingen voorkomen
@@ -216,7 +216,7 @@ function barChart(host, { n, series, tick, tickEvery = 1, yFmt, tooltip }) {
 }
 
 function legend(host, items, box = false) {
-  host.innerHTML = items.map(([name, color]) => `<span><i class="${box ? "box" : ""}" style="--c:${color}"></i>${name}</span>`).join("");
+  host.innerHTML = items.map(([name, color, dash]) => `<span><i class="${box ? "box" : dash ? "dash" : ""}" style="--c:${color}"></i>${name}</span>`).join("");
 }
 
 /* ================= live ================= */
@@ -253,6 +253,19 @@ function renderLive(d) {
   $("#v-house").textContent = fmtW(n.house_w);
   $("#v-batt").textContent = !n.battery_configured ? "uit" : n.soc == null ? "–" : `${nl0.format(n.soc)}%`;
   $("#v-hp").textContent = fmtW(n.heatpump_w);
+  const hasAc = !!n.aircon_configured;
+  const flow = $("#flow");
+  if (flow.classList.contains("no-ac") === hasAc) {
+    flow.classList.toggle("no-ac", !hasAc);
+    flow.setAttribute("viewBox", hasAc ? "0 0 380 372" : "0 0 380 330");
+  }
+  $("#acTab").hidden = !hasAc;
+  if (hasAc !== curveHasAc && curveData) drawCurve();
+  $(".tabs").classList.toggle("five", hasAc);
+  if (hasAc) {
+    $("#v-ac").textContent = n.aircon_w == null ? "–" : n.aircon_on ? `≈ ${fmtW(n.aircon_w)}` : "uit";
+    setFlow("ac", n.aircon_w, false);
+  }
   setFlow("sun", n.solar_w, false);
   setFlow("grid", n.grid_w == null ? null : Math.abs(n.grid_w), n.grid_w < 0);
   setFlow("batt", n.battery_w == null ? null : Math.abs(n.battery_w), n.battery_w < 0);
@@ -269,7 +282,15 @@ function renderLive(d) {
   else if (n.solar_w < 15) li(COLORS.sun, "De zonnepanelen leveren nu niets.");
   else li(COLORS.sun, `De zon levert <strong>${fmtW(n.solar_w)}</strong>.`);
   if (n.house_w == null) li(COLORS.house, "Het verbruik van het huis is nu onbekend.");
-  else li(COLORS.house, `Het huis gebruikt <strong>${fmtW(n.house_w)}</strong>${n.heatpump_w > 30 ? `, waarvan de warmtepomp <strong>${fmtW(n.heatpump_w)}</strong>` : ""}.`);
+  else {
+    const parts = [];
+    if (n.heatpump_w > 30) parts.push(`de warmtepomp <strong>${fmtW(n.heatpump_w)}</strong>`);
+    if (n.aircon_w > 30) parts.push(`de airco's ongeveer <strong>${fmtW(n.aircon_w)}</strong>`);
+    li(COLORS.house, `Het huis gebruikt <strong>${fmtW(n.house_w)}</strong>${parts.length ? `, waarvan ${parts.join(" en ")}` : ""}.`);
+  }
+  if (hasAc && n.aircon_on != null) {
+    li(COLORS.ac, n.aircon_on ? `${n.aircon_on === 1 ? "Er staat 1 airco aan" : `Er staan ${n.aircon_on} airco's aan`}. <a href="#airco">Bedienen</a>` : `Alle airco's staan uit. <a href="#airco">Bedienen</a>`);
+  }
   if (!n.battery_configured) { /* batterij niet in gebruik */ }
   else if (n.battery_w == null) li(COLORS.batt, "Geen gegevens van de thuisbatterij.");
   else if (n.battery_w > 25) li(COLORS.batt, `De batterij laadt op met <strong>${fmtW(n.battery_w)}</strong> en is <strong>${pct(n.soc)}</strong> vol.`);
@@ -311,7 +332,7 @@ function renderLive(d) {
   $("#today").innerHTML = [
     tile("Zelf voorzien", "", t.self_sufficiency == null ? "–" : `${nl0.format(t.self_sufficiency)}<small>%</small>`, "van het verbruik kwam van eigen zon of batterij", true),
     tile("Opgewekt", COLORS.sun, kwh(t.solar_wh)),
-    tile("Verbruikt", COLORS.house, kwh(t.house_wh)),
+    tile("Verbruikt", COLORS.house, kwh(t.house_wh), hasAc ? `waarvan airco's ≈ ${fmtKwh(t.aircon_wh)}` : ""),
     tile("Warmtepomp", COLORS.hp, kwh(t.heatpump_wh)),
     tile("Van het net", COLORS.grid, kwh(t.import_wh)),
     tile("Teruggeleverd", COLORS.grid, kwh(t.export_wh)),
@@ -348,7 +369,7 @@ function renderLive(d) {
   }
 
   // bronnen
-  const names = { grid: "Slimme meter", battery: "Thuisbatterij", solar: "Zonnepanelen", heatpump: "Warmtepomp" };
+  const names = { grid: "Slimme meter", battery: "Thuisbatterij", solar: "Zonnepanelen", heatpump: "Warmtepomp", aircon: "Airco's" };
   $("#sources").innerHTML = Object.entries(d.sources)
     .map(([k, src]) => {
       const cls = !src.configured ? "" : src.online ? "ok" : "down";
@@ -368,6 +389,7 @@ async function pollLive() {
 }
 
 let curveData = null;
+let curveHasAc = false;
 async function loadCurve() {
   curveData = await getJSON("/api/curve");
   drawCurve();
@@ -380,12 +402,17 @@ function drawCurve() {
   const pts = curveData.points;
   const x = pts.map((p) => p.ts);
   const kw = (k) => pts.map((p) => (p[k] == null ? null : Math.max(p[k], 0) / 1000));
+  const hasAc = !!(live && live.now.aircon_configured) || pts.some((p) => p.aircon_w > 0);
+  curveHasAc = hasAc;
+  // Volgorde bewust: de airco (teal) staat niet naast de warmtepomp (roze), en is gestippeld
+  // omdat die twee kleuren voor kleurenblinden op elkaar lijken.
   const series = [
     { name: "Zon", color: COLORS.sun, values: kw("solar_w") },
+    ...(hasAc ? [{ name: "Airco's (geschat)", color: COLORS.ac, values: kw("aircon_w"), dash: true }] : []),
     { name: "Verbruik huis", color: COLORS.house, values: kw("house_w") },
     { name: "Warmtepomp", color: COLORS.hp, values: kw("heatpump_w") },
   ];
-  legend($("#curveLegend"), series.map((s) => [s.name, s.color]));
+  legend($("#curveLegend"), series.map((s) => [s.name, s.color, s.dash]));
   lineChart($("#curveChart"), {
     x, series, x0, x1,
     yFmt: (v) => (Number.isInteger(v) ? nl0.format(v) : nl1.format(v)),
@@ -398,6 +425,7 @@ function drawCurve() {
         tipRow(COLORS.sun, "Zon", fmtW(p.solar_w)) +
         tipRow(COLORS.house, "Verbruik huis", fmtW(p.house_w)) +
         tipRow(COLORS.hp, "Warmtepomp", fmtW(p.heatpump_w)) +
+        (hasAc ? tipRow(COLORS.ac, "Airco's (geschat)", fmtW(p.aircon_w)) : "") +
         `<div class="sep"></div>` +
         tipRow(COLORS.grid, p.grid_w < 0 ? "Terug naar net" : "Van het net", fmtW(p.grid_w)) +
         tipRow(COLORS.batt, p.battery_w < 0 ? "Batterij levert" : "Batterij laadt", fmtW(p.battery_w)) +
@@ -579,6 +607,7 @@ function drawHistory() {
         tipRow(COLORS.sun, "Opgewekt", fmtKwh(r.solar_wh)) +
         tipRow(COLORS.house, "Verbruikt", fmtKwh(r.house_wh)) +
         tipRow(COLORS.hp, "waarvan warmtepomp", fmtKwh(r.heatpump_wh)) +
+        (r.aircon_wh > 0 ? tipRow(COLORS.ac, "waarvan airco's (geschat)", fmtKwh(r.aircon_wh)) : "") +
         `<div class="sep"></div>` +
         tipRow(COLORS.grid, "Van het net", fmtKwh(r.import_wh)) +
         tipRow(COLORS.grid, "Teruggeleverd", fmtKwh(r.export_wh)) +
@@ -617,7 +646,8 @@ function drawHistory() {
     });
   }
 
-  const cols = [["solar_wh", "Opgewekt"], ["house_wh", "Verbruikt"], ["heatpump_wh", "Warmtepomp"], ["import_wh", "Van net"], ["export_wh", "Terug"], ["charge_wh", "Batterij in"], ["discharge_wh", "Batterij uit"]];
+  const acCol = t.aircon_wh > 0 ? [["aircon_wh", "Airco"]] : [];
+  const cols = [["solar_wh", "Opgewekt"], ["house_wh", "Verbruikt"], ["heatpump_wh", "Warmtepomp"], ...acCol, ["import_wh", "Van net"], ["export_wh", "Terug"], ["charge_wh", "Batterij in"], ["discharge_wh", "Batterij uit"]];
   $("#histTable").innerHTML = `<table><thead><tr><th>${hist.mode === "hour" ? "Uur" : hist.mode === "day" ? "Dag" : "Maand"}</th>${cols.map(([, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>` +
     rows.filter((r) => r.solar_wh != null).map((r) => `<tr><td>${bucketLabel(hist.mode, r.bucket, true)}</td>${cols.map(([k]) => `<td>${fmtKwh(r[k], false)}</td>`).join("")}</tr>`).join("") +
     `</tbody><tfoot><tr><td>Totaal (kWh)</td>${cols.map(([k]) => `<td>${fmtKwh(t[k], false)}</td>`).join("")}</tr></tfoot></table>`;
@@ -914,10 +944,133 @@ async function renderPush() {
   });
 }
 
+/* ================= airco ================= */
+const ac = { data: null, busy: new Set(), msg: {} };
+const AC_MODES = [["auto", "Auto"], ["cool", "Koelen"], ["heat", "Verwarmen"], ["dry", "Drogen"], ["fan", "Ventileren"]];
+const AC_DOING = { cool: "Koelt", heat: "Verwarmt", dry: "Droogt", auto: "Regelt", fan: "Ventileert" };
+
+async function loadAircon() {
+  ac.data = await getJSON("/api/aircon");
+  renderAircon();
+}
+function showAcError(e) {
+  const box = $("#acError");
+  box.hidden = false;
+  box.textContent = `De airco's konden niet worden opgehaald: ${e.message || e}`;
+}
+
+function acStatus(u) {
+  if (!u.online) return ["down", u.error ? `Niet bereikbaar: ${u.error}` : "Niet bereikbaar"];
+  if (u.fault) return ["down", `Storing ${u.fault}, zie de Smart M-Air-app`];
+  if (!u.on) return ["", "Uit"];
+  if (u.mode === "fan") return ["run", `Ventileert, ongeveer ${fmtW(u.power_w)}`];
+  if (u.compressor) return ["run", `${AC_DOING[u.mode] || "Draait"}, ongeveer ${fmtW(u.power_w)}`];
+  return ["", "Aan, temperatuur bereikt"];
+}
+
+function acCard(u, canControl) {
+  const busy = ac.busy.has(u.id);
+  const dis = !canControl || busy || !u.online || u.on == null ? "disabled" : "";
+  const [cls, text] = acStatus(u);
+  const target = u.target == null ? "–" : `${nl1.format(u.target)} °C`;
+  const room = u.room_temp == null ? "–" : `${nl1.format(u.room_temp)} °C`;
+  const msg = ac.msg[u.id];
+  const sw = canControl
+    ? `<label class="switch" title="${u.on ? "Uitzetten" : "Aanzetten"}"><input type="checkbox" data-act="power" ${u.on ? "checked" : ""} ${dis} aria-label="${esc(u.name)} ${u.on ? "uitzetten" : "aanzetten"}"><span></span></label>`
+    : "";
+  return `<div class="card ac-card${u.on ? "" : " off"}${busy ? " busy" : ""}" data-id="${esc(u.id)}">
+    <div class="ac-top"><div><h3>${esc(u.name)}</h3><p class="ac-status ${cls}"><span class="st"></span>${esc(text)}</p></div>${sw}</div>
+    <div class="ac-temp">
+      <div class="ac-room">In de kamer<strong>${room}</strong></div>
+      <div class="ac-set">
+        ${canControl ? `<button data-act="down" ${dis || (u.target <= u.min ? "disabled" : "")} aria-label="Een halve graad lager">−</button>` : ""}
+        <output aria-live="polite">${target}<small>ingesteld</small></output>
+        ${canControl ? `<button data-act="up" ${dis || (u.target >= u.max ? "disabled" : "")} aria-label="Een halve graad hoger">+</button>` : ""}
+      </div>
+    </div>
+    <div class="ac-modes" role="group" aria-label="Stand">
+      ${AC_MODES.map(([k, l]) => `<button data-act="mode" data-mode="${k}" aria-pressed="${u.mode === k}" ${dis}>${l}</button>`).join("")}
+    </div>
+    <p class="ac-msg${msg && msg.err ? " err" : ""}">${busy ? "Bezig, de airco krijgt de opdracht…" : msg ? esc(msg.text) : ""}</p>
+  </div>`;
+}
+
+function renderAircon() {
+  const d = ac.data;
+  if (!d) return;
+  $("#acError").hidden = true;
+  if (!d.configured) {
+    $("#acUnits").innerHTML = `<div class="card"><p>Er zijn geen airco's ingesteld. Zet ze in <code>AIRCO_UNITS</code> in het bestand <code>.env</code>.</p></div>`;
+    $("#acSummary").textContent = "";
+    return;
+  }
+  const units = d.units || [];
+  const on = units.filter((u) => u.online && u.on).length;
+  const total = units.reduce((a, u) => a + (u.online && u.power_w ? u.power_w : 0), 0);
+  $("#acSummary").textContent = units.length
+    ? `${on ? `${on} van de ${units.length} aan` : "Alle airco's uit"}${on ? `, samen ongeveer ${fmtW(total)}` : ""}`
+    : "Verbinden met de airco's…";
+  $("#acUnits").innerHTML = units.map((u) => acCard(u, d.control)).join("");
+}
+
+async function acCommand(id, changes, okText) {
+  ac.busy.add(id);
+  ac.msg[id] = null;
+  renderAircon();
+  try {
+    const unit = await postJSON(`/api/aircon/${encodeURIComponent(id)}`, changes);
+    const i = ac.data.units.findIndex((u) => u.id === id);
+    if (i >= 0) ac.data.units[i] = unit;
+    ac.msg[id] = { text: okText(unit) };
+  } catch (e) {
+    ac.msg[id] = { text: `Lukte niet: ${e.message || e}`, err: true };
+  } finally {
+    ac.busy.delete(id);
+    renderAircon();
+    pollLive();
+  }
+}
+
+// Temperatuurknoppen: een paar tikken snel achter elkaar worden één opdracht.
+const acPending = {};
+function acNudge(u, delta) {
+  const p = acPending[u.id] || (acPending[u.id] = { target: u.target });
+  p.target = Math.min(u.max, Math.max(u.min, Math.round((p.target + delta) * 2) / 2));
+  const card = $(`.ac-card[data-id="${CSS.escape(u.id)}"] output`);
+  if (card) card.innerHTML = `${nl1.format(p.target)} °C<small>ingesteld</small>`;
+  clearTimeout(p.t);
+  p.t = setTimeout(() => {
+    delete acPending[u.id];
+    if (p.target !== u.target) acCommand(u.id, { target: p.target }, (x) => `Ingesteld op ${nl1.format(x.target)} °C.`);
+  }, 900);
+}
+
+function initAircon() {
+  $("#acUnits").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-act]");
+    if (!b || b.disabled) return;
+    const id = b.closest(".ac-card").dataset.id;
+    const u = ac.data.units.find((x) => x.id === id);
+    if (!u) return;
+    if (b.dataset.act === "up") acNudge(u, 0.5);
+    else if (b.dataset.act === "down") acNudge(u, -0.5);
+    else if (b.dataset.act === "mode") {
+      const label = AC_MODES.find(([k]) => k === b.dataset.mode)[1].toLowerCase();
+      acCommand(id, { mode: b.dataset.mode }, () => `Staat aan op ${label}.`);
+    }
+  });
+  $("#acUnits").addEventListener("change", (e) => {
+    const inp = e.target.closest("input[data-act=power]");
+    if (!inp) return;
+    const id = inp.closest(".ac-card").dataset.id;
+    acCommand(id, { on: inp.checked }, (x) => (x.on ? "Staat aan." : "Staat uit."));
+  });
+}
+
 /* ================= navigatie ================= */
 function route() {
   const view = (location.hash || "#nu").slice(1);
-  const views = ["nu", "geschiedenis", "panelen", "meldingen"];
+  const views = ["nu", "geschiedenis", "panelen", "airco", "meldingen"];
   const v = views.includes(view) ? view : "nu";
   for (const id of views) $(`#view-${id}`).hidden = id !== v;
   document.querySelectorAll("a[data-view]").forEach((a) => (a.dataset.view === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
@@ -926,6 +1079,7 @@ function route() {
   if (v === "nu") { loadCurve().catch(() => {}); loadPrices().catch(() => {}); }
   if (v === "geschiedenis") loadHistory().catch(() => {});
   if (v === "panelen") loadPanels().catch(() => {});
+  if (v === "airco") loadAircon().catch((e) => showAcError(e));
   if (v === "meldingen") renderPush().catch((e) => { $("#pushBox").textContent = `Laden lukte niet: ${e.message || e}`; });
 }
 
@@ -939,6 +1093,7 @@ window.addEventListener("resize", () => {
 registerSW();
 initHistory();
 initPanels();
+initAircon();
 route();
 pollLive();
 setInterval(() => { if (!document.hidden) pollLive(); }, 5000);
@@ -949,4 +1104,6 @@ setInterval(() => {
   const last = pan.data.days[pan.data.days.length - 1];
   if (!pan.day || pan.day === last) loadPanels().catch(() => {});
 }, 60000);
+// Airco-tab open: elke 10 seconden de toestand ophalen (de server vraagt de airco's zelf elke minuut uit)
+setInterval(() => { if (!document.hidden && !$("#view-airco").hidden && !ac.busy.size) loadAircon().catch(showAcError); }, 10000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pollLive(); });

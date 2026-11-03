@@ -22,6 +22,8 @@ Fields per live role (all in W unless stated; None = unknown):
   solar     power_w       current AC production of the inverter
   heatpump  power_w       electrical power used
             heat_output_w, supply_temperature, outdoor_temperature, is_on, fault_code   (optional)
+  aircon    power_w       all units together (may be an estimate); units_on; units (see wfrac.unit_view)
+            may set src.control = async control(unit_id, changes) for the Airco tab
 
 Provider roles (register a class or factory instead of a run coroutine):
 
@@ -31,7 +33,7 @@ Provider roles (register a class or factory instead of a run coroutine):
             async fetch_day(session, day: date) -> [(quarter_ts_utc, "YYYY-MM-DD local", market_eur_kwh, all_in_eur_kwh)]
 
 Rules of thumb:
-  * Read only. Never change device settings from an integration.
+  * Read only. Never change device settings from an integration (except aircon via src.control).
   * Never crash the loop: catch exceptions, call src.error(), back off, retry.
   * Keep secrets in environment variables, never in code or logs.
 """

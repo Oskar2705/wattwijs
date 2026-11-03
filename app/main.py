@@ -65,7 +65,8 @@ async def watchdog() -> None:
         await asyncio.sleep(60)
 
 
-ROLE_NAMES = {"grid": "slimme meter", "battery": "thuisbatterij", "solar": "zonnepanelen", "heatpump": "warmtepomp"}
+ROLE_NAMES = {"grid": "slimme meter", "battery": "thuisbatterij", "solar": "zonnepanelen", "heatpump": "warmtepomp",
+              "aircon": "airco's"}
 SELECTED: dict[str, str | None] = {}
 
 
@@ -186,6 +187,51 @@ def live() -> dict[str, Any]:
         "site_name": config.site_name,
         "demo": config.demo,
     }
+
+
+# ---------------- airco's ----------------
+
+
+@app.get("/api/aircon")
+def aircon_view() -> dict[str, Any]:
+    src = state.aircon
+    return {
+        "configured": src.configured,
+        "control": bool(config.airco_control and src.control),
+        "units": src.values.get("units", []),
+        "power_w": src.get("power_w"),
+        "error": src.last_error,
+    }
+
+
+@app.post("/api/aircon/{unit_id}")
+async def aircon_set(unit_id: str, request: Request) -> dict[str, Any]:
+    src = state.aircon
+    if not src.configured or src.control is None:
+        raise HTTPException(404, "Er zijn geen airco's om te bedienen.")
+    if not config.airco_control:
+        raise HTTPException(403, "Bedienen staat uit (AIRCO_CONTROL=0).")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "Ongeldig verzoek.") from None
+    changes = {k: body.get(k) for k in ("on", "mode", "target") if body.get(k) is not None}
+    log.info("Airco %s: %s", unit_id, changes)
+    try:
+        # Houdt de app van iemand anders de unit net vast, dan wacht pywfrac tot 60 s.
+        unit = await asyncio.wait_for(src.control(unit_id, changes), timeout=90)
+    except KeyError:
+        raise HTTPException(404, "Deze airco bestaat niet.") from None
+    except ValueError as exc:
+        raise HTTPException(400, f"Kan niet: {exc}.") from None
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "De airco reageert niet. Probeer het zo nog eens.") from None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Airco %s bedienen mislukt: %s", unit_id, exc)
+        raise HTTPException(502, f"De airco nam de opdracht niet aan: {exc}") from None
+    return unit
 
 
 @app.get("/api/curve")
@@ -335,7 +381,7 @@ def export_csv(start: str, end: str) -> Response:
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
     labels = ["datum", "uur", "afname_kwh", "teruglevering_kwh", "opwek_kwh", "batterij_geladen_kwh",
-              "batterij_ontladen_kwh", "warmtepomp_kwh", "verbruik_huis_kwh",
+              "batterij_ontladen_kwh", "warmtepomp_kwh", "verbruik_huis_kwh", "airco_kwh_geschat",
               "kosten_afname_eur", "opbrengst_teruglevering_eur", "netto_eur"]
     w.writerow(labels)
     nl = lambda v, n: "" if v is None else f"{v:.{n}f}".replace(".", ",")  # noqa: E731

@@ -17,7 +17,8 @@ It was built for one Dutch household with a heat pump, a home battery, solar pan
 - **Per-panel check for solar panels.** Every evening each panel is compared with its neighbours in the same row. When one keeps falling behind or dies, you get an email and a push notification. The app learns fixed shading by itself, so it doesn't send false alarms. The roof is drawn the way the SolarEdge portal draws it.
 - **Dynamic prices** (15-minute resolution) with costs and revenue in euros, the cheapest 2-hour block of the day, and warnings for negative prices.
 - **Installable web app with push notifications**, including on iPhone: a morning tip with the cheapest time to run the dishwasher, panel alerts, daily records and a weekly summary.
-- **Read-only.** The app never changes a setting on any device.
+- **Air conditioners**: estimated usage per unit and a tab to switch them on or off and set the mode and temperature.
+- **Read-only by default.** The app never changes a setting on any device, except the air conditioners when someone uses the Airco tab (`AIRCO_CONTROL=0` turns that off).
 - **Demo mode** with simulated data, so you can try it without any hardware.
 
 The user interface is in Dutch. Translations are welcome (see [CONTRIBUTING.md](CONTRIBUTING.md)).
@@ -35,6 +36,7 @@ Each *role* has one active integration. The app picks one automatically from the
 | `solar` | `solaredge_cloud` | SolarEdge inverter | Monitoring portal, every 2 minutes |
 | `panels` | `solaredge` | SolarEdge optimizers (per-panel yield) | Monitoring portal |
 | `heatpump` | `dewarmte` | DeWarmte (Pomp AO, MP, T, Heatcycle) | mydewarmte.com cloud API |
+| `aircon` | `wfrac` | Mitsubishi Heavy Industries with WF-RAC wifi module (Smart M-Air app) | Local API, port 51443 |
 | `prices` | `frank` | Frank Energie (NL) | Public GraphQL API, no login |
 | all | `demo` | Simulated household | — |
 
@@ -81,6 +83,14 @@ The app has to reach the battery, the P1 dongle and (optionally) the inverter **
 3. Recommended: have Modbus TCP enabled on the inverter (SetApp → Communication → LAN → Modbus TCP, port 1502; usually done by the installer) and fill in `SOLAREDGE_MODBUS_HOST`. Live production then updates every 5 seconds instead of every 2 minutes.
 
 **DeWarmte**: the same email and password as on mydewarmte.com.
+
+**Air conditioners** (`AIRCO_UNITS`)
+
+1. Each indoor unit needs the WF-RAC wifi module and must already work in the Smart M-Air app.
+2. Give each indoor unit a fixed IP and list them as `AIRCO_UNITS=Living room=192.168.1.40;Bedroom=192.168.1.41`. A multi-split has one entry per indoor unit.
+3. On first contact the app registers itself on each unit as an extra user, like a second phone. If the unit reports that it has no room for another user, remove an old link in the Smart M-Air app.
+4. The units don't report power in watts. The app estimates it per unit from whether the compressor runs and from the unit's energy counter, which counts in steps of 0.25 kWh. Treat it as an indication; for exact figures put a kWh meter on the air conditioning group.
+5. After a command, the unit gives the app a 60-second lock, so the Smart M-Air app can't change that unit for a minute. Set `AIRCO_CONTROL=0` if you only want to read.
 
 **Email**: any SMTP server works. For Gmail, use an *app password*. Send a test with:
 
@@ -165,7 +175,7 @@ The code is a FastAPI back end (`app/`) with a plain HTML, CSS and JavaScript fr
 
 ## Caveats
 
-- The battery, DeWarmte and SolarEdge portal integrations use **unofficial** interfaces, the same ones the Home Assistant community integrations use. A firmware or portal update can break them. The app keeps running and shows the error in the footer.
+- The battery, DeWarmte, air conditioner and SolarEdge portal integrations use **unofficial** interfaces, the same ones the Home Assistant community integrations use. A firmware or portal update can break them. The app keeps running and shows the error in the footer.
 - The Frank Energie price API is public but not officially documented.
 - This is a hobby project and is not affiliated with any of the brands mentioned.
 
@@ -177,6 +187,7 @@ The device protocols were figured out by others first. Thanks to:
 - [ronald-willems/dewarmte-homeassistant](https://github.com/ronald-willems/dewarmte-homeassistant) for the DeWarmte API
 - [solaredge-web](https://pypi.org/project/solaredge-web/) and [solaredged](https://pypi.org/project/solaredged/) for SolarEdge
 - [python-frank-energie](https://github.com/HiDiHo01/python-frank-energie) for the Frank Energie query
+- [pywfrac](https://pypi.org/project/pywfrac/) and [blues-sechseck/Mitsubishi-WF-RAC-Integration](https://github.com/blues-sechseck/Mitsubishi-WF-RAC-Integration) for the Mitsubishi Heavy WF-RAC protocol
 
 The interface uses [Atkinson Hyperlegible](https://www.brailleinstitute.org/freefont/) by the Braille Institute, under the SIL Open Font License.
 

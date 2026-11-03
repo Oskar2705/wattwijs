@@ -8,10 +8,10 @@ Every brand is one file in `app/integrations/`. The app finds it automatically.
 
 1. Copy `app/integrations/_template.py` to `app/integrations/<brand>.py`. Files that start with `_` are not loaded.
 2. Fill in the `@register(role, key, title, env=..., description=...)` line:
-   - `role` is one of `grid`, `battery`, `solar`, `heatpump`, `panels`, `prices`;
+   - `role` is one of `grid`, `battery`, `solar`, `heatpump`, `aircon`, `panels`, `prices`;
    - `key` is short, lowercase and unique within the role. Users select it with `<ROLE>_INTEGRATION=<key>`;
    - `env` lists the environment variables your integration reads. They show up in `/api/integrations`.
-3. Live roles (`grid`, `battery`, `solar`, `heatpump`) register an `async def run(src)` coroutine. It reads the device in a loop and calls `src.update(...)` with the fields in the table below.
+3. Live roles (`grid`, `battery`, `solar`, `heatpump`, `aircon`) register an `async def run(src)` coroutine. It reads the device in a loop and calls `src.update(...)` with the fields in the table below.
 4. Provider roles (`panels`, `prices`) register a class or factory instead; see the template for the methods.
 5. Add your settings to `.env.example` and a row to the table in both READMEs.
 6. Add a test.
@@ -32,10 +32,13 @@ All power values are in watts. `None` means unknown.
 | `solar` | `power_w` | current AC production of the inverter |
 | `heatpump` | `power_w` | electrical power used |
 | | `heat_output_w`, `supply_temperature`, `outdoor_temperature`, `is_on`, `fault_code` | optional |
+| `aircon` | `power_w` | all units together (may be estimated) |
+| | `units_on` | number of units switched on |
+| | `units` | list of unit dicts, see `unit_view()` in `app/integrations/wfrac.py` |
 
 ### Rules
 
-- **Read only.** An integration must never change a setting on a device.
+- **Read only.** An integration must never change a setting on a device. The one exception is the `aircon` role: it may set `src.control` to an async `control(unit_id, changes)` that is only called when a user presses a button, and it must respect `AIRCO_CONTROL=0`.
 - **Never crash the loop.** Catch exceptions, call `src.error(message)`, wait, and try again. The footer of the app shows the last error, and the watchdog sends an alert when a source stays silent.
 - **No secrets in code or logs.** Read them from environment variables.
 - **Keep parsing separate from I/O.** A pure `parse(raw) -> dict` function can be tested without the device.

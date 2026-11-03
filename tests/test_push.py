@@ -94,8 +94,8 @@ def _seed_day(d: date, solar_scale=1.0, import_wh=6.0):
         local = datetime.fromtimestamp(ts, config.tz)
         sun = 20.0 * solar_scale if 9 <= local.hour < 16 else 0.0
         imp = 0.0 if sun else import_wh
-        rows.append((ts, d.isoformat(), local.hour, imp, max(sun - 5, 0), sun, 0, 0, 2.0, 5.0 if sun else imp,
-                     None, None, None, None, None, None))
+        rows.append((ts, d.isoformat(), local.hour, imp, max(sun - 5, 0), sun, 0, 0, 2.0, 5.0 if sun else imp, 0,
+                     None, None, None, None, None, None, None))
     get_db().write_minutes(rows)
 
 

@@ -53,14 +53,22 @@ def heatpump(t: datetime) -> float:
     return 1150.0 + 250 * math.sin(t.minute / 9) if on else 12.0
 
 
+def aircon_history(t: datetime) -> float:
+    """Geschiedenis: 's avonds verwarmt één airco een slaapkamer bij."""
+    h = t.hour + t.minute / 60
+    return 520.0 + 120 * math.sin(t.minute / 7) if 19 <= h < 22.5 else 0.0
+
+
 class Sim:
-    def __init__(self) -> None:
+    def __init__(self, live: bool = False) -> None:
         self.soc_wh = CAPACITY_WH * 0.45
+        self.live = live
 
     def step(self, t: datetime, dt: float) -> dict[str, float]:
         solar = PEAK_SOLAR_W * sun(t, t.toordinal())
         hp = heatpump(t)
-        house = house_base(t) + hp + random.uniform(-30, 60)
+        ac = demo_aircons.total_w() if self.live else aircon_history(t)
+        house = house_base(t) + hp + ac + random.uniform(-30, 60)
         surplus = solar - house
         soc_pct = self.soc_wh / CAPACITY_WH * 100
         if surplus > 50 and soc_pct < 100:
@@ -71,10 +79,52 @@ class Sim:
             batt = 0.0
         self.soc_wh = min(max(self.soc_wh + batt * dt / 3600 * (0.95 if batt > 0 else 1.0), 0), CAPACITY_WH)
         grid = house - solar + batt
-        return {"solar": solar, "hp": hp, "house": house, "batt": batt, "grid": grid, "soc": self.soc_wh / CAPACITY_WH * 100}
+        return {"solar": solar, "hp": hp, "ac": ac, "house": house, "batt": batt, "grid": grid,
+                "soc": self.soc_wh / CAPACITY_WH * 100}
 
 
-sim = Sim()
+# ---------------- demo-airco's ----------------
+
+
+class DemoAircons:
+    """Drie gesimuleerde binnenunits die echt reageren op de knoppen in het tabblad Airco."""
+
+    def __init__(self) -> None:
+        from pywfrac import Aircon
+
+        from .wfrac import PowerEstimator, Unit, UnitConfig
+
+        names = [("Slaapkamer", 1, 2, 20.0, 18.4), ("Kinderkamer", 0, 2, 21.0, 19.6), ("Zolder", 0, 1, 23.0, 22.1)]
+        self.units = []
+        for name, on, mode, target, room in names:
+            u = Unit(UnitConfig(name.lower(), name, "demo"), est=PowerEstimator())
+            u.aircon = Aircon(Operation=bool(on), OperationMode=mode, PresetTemp=target, IndoorTemp=room,
+                              OutdoorTemp=8.5, Electric=0.0)
+            u.airco_id = name.lower()
+            self.units.append(u)
+
+    def step(self, dt: float) -> None:
+        for u in self.units:
+            a = u.aircon
+            gap = a.PresetTemp - a.IndoorTemp
+            want = (a.OperationMode == 2 and gap > 0.3) or (a.OperationMode == 1 and gap < -0.3) or (
+                a.OperationMode == 0 and abs(gap) > 0.3)
+            a.CompressorRunning = bool(a.Operation and want)
+            if a.CompressorRunning:
+                u.power_w = min(380 + 160 * abs(gap), 900) + random.uniform(-20, 20)
+                a.IndoorTemp += math.copysign(min(abs(gap), 0.02 * dt / 10), gap)
+            else:
+                u.power_w = 25.0 if a.Operation else 0.0
+                a.IndoorTemp += (17.0 - a.IndoorTemp) * 0.0004 * dt / 10  # koelt langzaam af naar 17 graden
+            a.IndoorTemp = round(a.IndoorTemp, 2)
+            u.updated = time.time()
+
+    def total_w(self) -> float:
+        return sum(u.power_w for u in self.units)
+
+
+demo_aircons = DemoAircons()
+sim = Sim(live=True)
 
 
 def backfill_history(days: int = 45) -> None:
@@ -85,7 +135,7 @@ def backfill_history(days: int = 45) -> None:
     start = int(time.time() // 60) * 60 - days * 86400
     end = int(time.time() // 60) * 60
     rows = []
-    s = Sim()
+    s = Sim(live=False)
     for ts in range(start, end, 60):
         t = datetime.fromtimestamp(ts, tz)
         v = s.step(t, 60)
@@ -96,6 +146,7 @@ def backfill_history(days: int = 45) -> None:
             "battery_w": v["batt"],
             "house_w": v["house"],
             "heatpump_w": v["hp"],
+            "aircon_w": v["ac"],
             "soc": v["soc"],
         }
         acc.add(snap, 60)
@@ -141,6 +192,34 @@ async def _idle(src: Source) -> None:
 register("battery", "demo", "Demo (nepgegevens)")(_idle)
 register("solar", "demo", "Demo (nepgegevens)")(_idle)
 register("heatpump", "demo", "Demo (nepgegevens)")(_idle)
+
+
+@register("aircon", "demo", "Demo (3 airco's)")
+async def run_aircon(src: Source) -> None:
+    from .wfrac import command_params, publish, unit_view
+
+    by_id = {u.cfg.id: u for u in demo_aircons.units}
+
+    async def control(unit_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        if not config.airco_control:
+            raise PermissionError("bedienen staat uit (AIRCO_CONTROL=0)")
+        u = by_id[unit_id]
+        params = command_params(u.aircon, changes)
+        await asyncio.sleep(0.8)  # een echte unit doet er ook even over
+        for k, v in params.items():
+            setattr(u.aircon, str(k), v)
+        demo_aircons.step(0)
+        publish(src, demo_aircons.units)
+        return unit_view(u)
+
+    src.control = control
+    last = time.time()
+    while True:
+        now = time.time()
+        demo_aircons.step(now - last)
+        last = now
+        publish(src, demo_aircons.units)
+        await asyncio.sleep(5)
 
 
 @register("panels", "demo", "Demo (12 panelen, één kapot)")

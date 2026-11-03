@@ -28,7 +28,7 @@ import pkgutil
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-LIVE_ROLES = ("grid", "battery", "solar", "heatpump")
+LIVE_ROLES = ("grid", "battery", "solar", "heatpump", "aircon")
 ROLES = (*LIVE_ROLES, "panels", "prices")
 
 
@@ -117,6 +117,8 @@ def selected(role: str) -> str | None:
         return "solaredge"
     if role == "heatpump" and config.dw_username and config.dw_password:
         return "dewarmte"
+    if role == "aircon" and config.airco_units:
+        return "wfrac"
     if role == "prices" and config.prices_enabled:
         return "frank"
     return None
