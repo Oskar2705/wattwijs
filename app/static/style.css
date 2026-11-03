@@ -329,7 +329,7 @@ tfoot td { font-weight: 700; border-top: 2px solid var(--rule); }
 .ac-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .2rem 1rem; }
 .ac-units { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 1.2rem; margin-top: .4rem; }
 .ac-units .card { margin-top: 0; display: grid; gap: .9rem; }
-.ac-card.off .ac-temp, .ac-card.off .ac-modes { opacity: .55; }
+.ac-card.off .ac-temp, .ac-card.off .ac-row { opacity: .55; }
 .ac-top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .ac-top h3 { margin: 0; font-size: 1.15rem; }
 .ac-status { margin: .1rem 0 0; color: var(--ink-2); font-size: .9rem; display: flex; align-items: center; gap: .45rem; }
@@ -366,3 +366,5 @@ tfoot td { font-weight: 700; border-top: 2px solid var(--rule); }
   .ac-set button { width: 2.5rem; height: 2.5rem; }
   .ac-set output { min-width: 4.8rem; font-size: 1.2rem; }
 }
+.ac-row { display: grid; gap: .35rem; }
+.ac-lbl { font-size: .8rem; color: var(--ink-3); }

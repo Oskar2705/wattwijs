@@ -49,6 +49,7 @@ def test_unit_view_from_real_frames():
     assert v["room_temp"] == 24.0 and v["outdoor_temp"] == 30.0
     assert (v["min"], v["max"]) == (16.0, 30.0)
     assert v["fault"] is None
+    assert v["fan"] == "auto"
     u.aircon = decode(ON_HEAT)
     assert unit_view(u, now=1e12)["mode"] == "heat"
     u.aircon = decode(OFF)
@@ -67,6 +68,9 @@ def test_command_params_and_validation():
         command_params(a, {"target": 40})
     with pytest.raises(ValueError):
         command_params(a, {"mode": "turbo"})
+    assert command_params(a, {"fan": "quiet"}) == {AirconCommands.AirFlow: 1}
+    with pytest.raises(ValueError):
+        command_params(a, {"fan": "eco"})
     with pytest.raises(ValueError):
         command_params(a, {})
     # Koelen mag tot 16 graden, verwarmen niet

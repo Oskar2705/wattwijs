@@ -35,6 +35,10 @@ DEFAULT_PORT = 51443
 
 MODES = {"auto": 0, "cool": 1, "heat": 2, "fan": 3, "dry": 4}
 MODE_NAMES = {v: k for k, v in MODES.items()}
+# Ventilatorstanden. "quiet" is de laagste stap; de ECO-stand van de afstandsbediening
+# bestaat niet in het wifi-protocol (staat ECO aan, dan meldt de unit de laagste stap).
+FANS = {"auto": 0, "quiet": 1, "low": 2, "medium": 3, "high": 4}
+FAN_NAMES = {v: k for k, v in FANS.items()}
 
 FAN_ONLY_W = 25.0  # binnenunit aan, compressor stil
 STEP_KWH = 0.25
@@ -153,6 +157,7 @@ def unit_view(u: Unit, now: float | None = None) -> dict[str, Any]:
         on=bool(a.Operation),
         mode=mode,
         target=float(a.PresetTemp),
+        fan=FAN_NAMES.get(int(a.AirFlow)),
         room_temp=_t(a.IndoorTemp),
         outdoor_temp=_t(a.OutdoorTemp),
         compressor=bool(getattr(a, "CompressorRunning", False)),
@@ -184,7 +189,7 @@ def _range(a: Any, mode: str) -> tuple[float, float]:
 
 
 def command_params(a: Any, changes: dict[str, Any]) -> dict[Any, Any]:
-    """Vertaalt {"on": bool, "mode": str, "target": float} naar pywfrac-commando's."""
+    """Vertaalt {"on": bool, "mode": str, "target": float, "fan": str} naar pywfrac-commando's."""
     from pywfrac import AirconCommands
 
     params: dict[Any, Any] = {}
@@ -194,6 +199,11 @@ def command_params(a: Any, changes: dict[str, Any]) -> dict[Any, Any]:
             raise ValueError(f"onbekende stand: {mode}")
         params[AirconCommands.OperationMode] = MODES[mode]
         params[AirconCommands.Operation] = True  # een stand kiezen zet de airco aan
+    fan = changes.get("fan")
+    if fan is not None:
+        if fan not in FANS:
+            raise ValueError(f"onbekende ventilatorstand: {fan}")
+        params[AirconCommands.AirFlow] = FANS[fan]
     if "on" in changes and changes["on"] is not None:
         params[AirconCommands.Operation] = bool(changes["on"])
     target = changes.get("target")

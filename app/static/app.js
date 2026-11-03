@@ -947,6 +947,7 @@ async function renderPush() {
 /* ================= airco ================= */
 const ac = { data: null, busy: new Set(), msg: {} };
 const AC_MODES = [["auto", "Auto"], ["cool", "Koelen"], ["heat", "Verwarmen"], ["dry", "Drogen"], ["fan", "Ventileren"]];
+const AC_FANS = [["auto", "Auto"], ["quiet", "Stil"], ["low", "Laag"], ["medium", "Midden"], ["high", "Hoog"]];
 const AC_DOING = { cool: "Koelt", heat: "Verwarmt", dry: "Droogt", auto: "Regelt", fan: "Ventileert" };
 
 async function loadAircon() {
@@ -988,8 +989,15 @@ function acCard(u, canControl) {
         ${canControl ? `<button data-act="up" ${dis || (u.target >= u.max ? "disabled" : "")} aria-label="Een halve graad hoger">+</button>` : ""}
       </div>
     </div>
-    <div class="ac-modes" role="group" aria-label="Stand">
-      ${AC_MODES.map(([k, l]) => `<button data-act="mode" data-mode="${k}" aria-pressed="${u.mode === k}" ${dis}>${l}</button>`).join("")}
+    <div class="ac-row"><span class="ac-lbl">Stand</span>
+      <div class="ac-modes" role="group" aria-label="Stand">
+        ${AC_MODES.map(([k, l]) => `<button data-act="mode" data-mode="${k}" aria-pressed="${u.mode === k}" ${dis}>${l}</button>`).join("")}
+      </div>
+    </div>
+    <div class="ac-row"><span class="ac-lbl">Ventilator</span>
+      <div class="ac-modes" role="group" aria-label="Ventilator">
+        ${AC_FANS.map(([k, l]) => `<button data-act="fan" data-fan="${k}" aria-pressed="${u.fan === k}" ${dis}>${l}</button>`).join("")}
+      </div>
     </div>
     <p class="ac-msg${msg && msg.err ? " err" : ""}">${busy ? "Bezig, de airco krijgt de opdracht…" : msg ? esc(msg.text) : ""}</p>
   </div>`;
@@ -1054,6 +1062,10 @@ function initAircon() {
     if (!u) return;
     if (b.dataset.act === "up") acNudge(u, 0.5);
     else if (b.dataset.act === "down") acNudge(u, -0.5);
+    else if (b.dataset.act === "fan") {
+      const label = AC_FANS.find(([k]) => k === b.dataset.fan)[1].toLowerCase();
+      acCommand(id, { fan: b.dataset.fan }, () => `Ventilator staat op ${label}.`);
+    }
     else if (b.dataset.act === "mode") {
       const label = AC_MODES.find(([k]) => k === b.dataset.mode)[1].toLowerCase();
       acCommand(id, { mode: b.dataset.mode }, () => `Staat aan op ${label}.`);
