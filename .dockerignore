@@ -8,3 +8,4 @@ tests
 .pytest_cache
 .venv
 *.md
+pytest.ini
