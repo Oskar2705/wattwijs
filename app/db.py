@@ -13,6 +13,28 @@ from .config import config
 ENERGY_COLS = ["import_wh", "export_wh", "solar_wh", "charge_wh", "discharge_wh", "heatpump_wh", "house_wh", "aircon_wh"]
 POWER_COLS = ["grid_w", "solar_w", "battery_w", "house_w", "heatpump_w", "soc", "aircon_w"]
 
+def consumption_wh(t: dict[str, Any]) -> float:
+    """Verbruik van het huis over een periode, uit de energiebalans.
+
+    Per minuut wordt het huisverbruik alleen vastgelegd als alle bronnen tegelijk bekend
+    zijn. Valt er even één weg (bijvoorbeeld een batterij die nog niet bereikbaar is), dan
+    ontbreken die minuten in house_wh, terwijl afname, teruglevering en opwek wel gemeten
+    zijn. De balans afname - teruglevering + opwek + ontladen - laden is dan vollediger.
+    We nemen de grootste van de twee: zonder gaten zijn ze (op batterijverliezen na) gelijk.
+    """
+    g = lambda k: float(t.get(k) or 0.0)  # noqa: E731
+    balance = g("import_wh") - g("export_wh") + g("solar_wh") + g("discharge_wh") - g("charge_wh")
+    return max(g("house_wh"), balance, 0.0)
+
+
+def self_sufficiency(t: dict[str, Any], min_wh: float = 50.0) -> float | None:
+    """Deel van het verbruik dat niet van het net kwam, in procent."""
+    house = consumption_wh(t)
+    if house <= min_wh:
+        return None
+    return max(0.0, min(1.0, 1 - float(t.get("import_wh") or 0.0) / house)) * 100
+
+
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS minute (
     ts INTEGER PRIMARY KEY,         -- begin van de minuut, unix-tijd (UTC)

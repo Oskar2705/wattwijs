@@ -264,3 +264,16 @@ def test_history_end_to_end_with_layout_and_revalidation(monkeypatch):
     ev = P.evaluate_stored_day(last)
     assert [k for k, e in ev.items() if e["status"] == LOW] == ["1.1.4"]
     assert ev["1.1.6"]["baseline"] is not None
+
+
+def test_consumption_and_self_sufficiency_survive_gaps():
+    """Huisverbruik ontbrak een paar uur (batterij onbereikbaar), afname en opwek niet."""
+    from app.db import consumption_wh, self_sufficiency
+
+    t = {"import_wh": 4870, "export_wh": 300, "solar_wh": 1000, "house_wh": 3160, "charge_wh": 0, "discharge_wh": 0}
+    assert consumption_wh(t) == 5570  # balans is vollediger dan de opgetelde minuten
+    assert round(self_sufficiency(t)) == 13  # (1000 - 300) / 5570, niet 0%
+    # zonder gaten wint de gemeten waarde, en batterijverliezen maken het niet kleiner
+    t2 = {"import_wh": 1000, "export_wh": 0, "solar_wh": 500, "house_wh": 1500, "charge_wh": 200, "discharge_wh": 180}
+    assert consumption_wh(t2) == 1500
+    assert self_sufficiency({"import_wh": 10, "house_wh": 20}) is None

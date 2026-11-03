@@ -9,7 +9,7 @@ from typing import Any
 
 from . import push
 from .config import config
-from .db import get_db
+from .db import consumption_wh, get_db, self_sufficiency
 from .prices import QUARTER, cheapest_block, windows
 
 log = logging.getLogger(__name__)
@@ -52,8 +52,8 @@ def _day_bounds(d: date) -> tuple[int, int]:
 
 def _totals(day: str) -> dict[str, Any]:
     t = get_db().totals_for_day(day)
-    house, imp = t.get("house_wh") or 0.0, t.get("import_wh") or 0.0
-    t["self_sufficiency"] = max(0.0, 1 - imp / house) * 100 if house > 100 else None
+    t["house_wh"] = consumption_wh(t)
+    t["self_sufficiency"] = self_sufficiency(t, min_wh=100)
     return t
 
 
@@ -153,10 +153,13 @@ def build_weekly(day: date) -> tuple[str, str] | None:
 
     def week(s: date, e: date) -> dict[str, Any]:
         r = db.q(
-            "SELECT SUM(solar_wh) s, SUM(house_wh) h, SUM(import_wh) i, COUNT(*) n FROM minute WHERE day BETWEEN ? AND ?",
+            "SELECT SUM(solar_wh) solar_wh, SUM(house_wh) house_wh, SUM(import_wh) import_wh, "
+            "SUM(export_wh) export_wh, SUM(charge_wh) charge_wh, SUM(discharge_wh) discharge_wh, COUNT(*) n "
+            "FROM minute WHERE day BETWEEN ? AND ?",
             (s.isoformat(), e.isoformat()),
         )[0]
-        return {k: (v or 0.0) for k, v in r.items()}
+        r = {k: (v or 0.0) for k, v in r.items()}
+        return {"s": r["solar_wh"], "h": consumption_wh(r), "i": r["import_wh"], "n": r["n"]}
 
     w = week(start, day)
     if w["n"] < 5 * 1440:  # minstens 5 dagen gemeten

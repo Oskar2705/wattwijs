@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import integrations, mailer, notifier, panels, prices, push, recorder
 from .config import config
-from .db import ENERGY_COLS, get_db, month_days
+from .db import ENERGY_COLS, consumption_wh, get_db, month_days, self_sufficiency
 from .state import state
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -158,8 +158,10 @@ def _with_ratios(t: dict[str, float]) -> dict[str, Any]:
     else:
         for c in [*COST_COLS, "net_cost", "price_coverage"]:
             out[c] = None
-    house, imp, solar, exp = out["house_wh"], out["import_wh"], out["solar_wh"], out["export_wh"]
-    out["self_sufficiency"] = round(max(0.0, 1 - imp / house) * 100, 0) if house > 50 else None
+    out["house_wh"] = round(consumption_wh(out), 1)
+    ss = self_sufficiency(out)
+    out["self_sufficiency"] = None if ss is None else round(ss, 0)
+    solar, exp = out["solar_wh"], out["export_wh"]
     out["self_consumption"] = round(max(0.0, 1 - exp / solar) * 100, 0) if solar > 50 else None
     return out
 
