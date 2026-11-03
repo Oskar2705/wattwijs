@@ -97,7 +97,8 @@ De app moet de batterij, de P1-dongle en eventueel de omvormer **op het lokale n
 1. Open het tabblad Klimaat, tik op **Koppel tado**, open de link en log in met het tado-account. De app bewaart een token in `data/tado_token.json`; er komt geen wachtwoord in `.env`.
 2. tado staat zonder Auto-Assist-abonnement **100 aanvragen per dag** toe. De app leest de kamers daarom elke `TADO_POLL_MINUTES` (20) minuten uit en past na een opdracht de kaart zelf aan, zonder alles opnieuw op te halen. Met Auto-Assist (20.000 per dag) kun je vaker laten uitlezen.
 3. Een temperatuur uit de app geldt tot het volgende blok in het schema (`TADO_MANUAL_UNTIL=next_block`) of tot je de kamer terugzet op schema (`manual`).
-4. Alleen de tado X-lijn wordt nu ondersteund; oudere V3+-installaties gebruiken een andere API.
+4. **Opwarmen** zet de kamer op `TADO_COMFORT_TEMP` (21 °C) voor `TADO_COMFORT_HOURS` (3) uur en gaat daarna terug naar het schema. Dezelfde actie bestaat als `POST /api/heating/comfort`, zodat een iPhone-opdracht ("Hé Siri, ik kom naar huis") hem kan starten: voeg in Opdrachten de actie *Haal inhoud van URL op* toe met methode POST naar `https://<jouw-app>/api/heating/comfort`, en een header `Authorization` als je basic auth gebruikt.
+5. Alleen de tado X-lijn wordt nu ondersteund; oudere V3+-installaties gebruiken een andere API.
 
 **Mail**: elke SMTP-server werkt. Voor Gmail gebruik je een *app-wachtwoord*. Testen:
 

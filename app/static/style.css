@@ -335,6 +335,7 @@ tfoot td { font-weight: 700; border-top: 2px solid var(--rule); }
 .ac-status { margin: .1rem 0 0; color: var(--ink-2); font-size: .9rem; display: flex; align-items: center; gap: .45rem; }
 .ac-status .st { width: .6rem; height: .6rem; border-radius: 50%; background: var(--ink-3); flex: none; }
 .ac-status.run .st { background: var(--ac); }
+.ac-status.heat .st { background: var(--hp); }
 .ac-status.down .st { background: var(--critical); }
 .ac-temp { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .ac-room { font-size: .9rem; color: var(--ink-2); white-space: nowrap; flex: none; }
@@ -372,3 +373,5 @@ tfoot td { font-weight: 700; border-top: 2px solid var(--rule); }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font-size: inherit; }
 #heatWrap:not([hidden]) + #acWrap { margin-top: 2.2rem; }
 a.btn { display: inline-block; text-decoration: none; }
+.btn.comfort { width: 100%; text-align: left; display: grid; gap: .1rem; padding: .7rem 1.1rem; border-radius: 14px; background: #9E3369; border-color: #9E3369; color: #fff; }
+.btn.comfort small { font-weight: 400; font-size: .8rem; opacity: .9; }

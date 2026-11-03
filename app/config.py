@@ -68,6 +68,9 @@ class Config:
     tado_poll_minutes: float = field(default_factory=lambda: max(2.0, _float("TADO_POLL_MINUTES", 20)))
     # Hoe lang een handmatige temperatuur geldt: next_block (tot het volgende blok in het schema) of manual
     tado_manual_until: str = field(default_factory=lambda: _str("TADO_MANUAL_UNTIL", "next_block"))
+    # Knop "Opwarmen" (en de snelkoppeling "ik kom naar huis"): temperatuur en hoe lang
+    tado_comfort_temp: float = field(default_factory=lambda: _float("TADO_COMFORT_TEMP", 21))
+    tado_comfort_hours: float = field(default_factory=lambda: _float("TADO_COMFORT_HOURS", 3))
     # Airco's (Mitsubishi Heavy WF-RAC): "Name=host[:port];Name=host[:port]"
     airco_units: str = field(default_factory=lambda: _str("AIRCO_UNITS"))
     # 0 = alleen uitlezen, het tabblad Airco toont dan geen knoppen

@@ -288,6 +288,11 @@ function renderLive(d) {
     if (n.aircon_w > 30) parts.push(`de airco's ongeveer <strong>${fmtW(n.aircon_w)}</strong>`);
     li(COLORS.house, `Het huis gebruikt <strong>${fmtW(n.house_w)}</strong>${parts.length ? `, waarvan ${parts.join(" en ")}` : ""}.`);
   }
+  for (const r of (n.heating_rooms || []).slice(0, 2)) {
+    if (r.room_temp == null) continue;
+    const set = r.on && r.target != null ? ` (ingesteld op ${nl1.format(r.target)} °C${r.heating_pct > 0 ? ", verwarmt" : ""})` : r.on ? "" : " (verwarming uit)";
+    li(COLORS.hp, `${esc(r.name)}: <strong>${nl1.format(r.room_temp)} °C</strong>${set}. <a href="#klimaat">Opwarmen</a>`);
+  }
   if (hasAc && n.aircon_on != null) {
     li(COLORS.ac, n.aircon_on ? `${n.aircon_on === 1 ? "Er staat 1 airco aan" : `Er staan ${n.aircon_on} airco's aan`}. <a href="#klimaat">Bedienen</a>` : `Alle airco's staan uit. <a href="#klimaat">Bedienen</a>`);
   }
@@ -1111,7 +1116,7 @@ function heatStatus(r) {
   if (r.online === false) return ["down", "Geen verbinding met de thermostaat"];
   if (r.window_open) return ["down", "Raam open, verwarming staat even uit"];
   if (!r.on) return ["", r.mode === "schedule" ? "Uit volgens schema" : "Uit (vorstbeveiliging)"];
-  if (r.heating_pct > 0) return ["run", `Verwarmt (${nl0.format(r.heating_pct)}%)`];
+  if (r.heating_pct > 0) return ["heat", `Verwarmt (${nl0.format(r.heating_pct)}%)`];
   return ["", "Op temperatuur"];
 }
 
@@ -1128,6 +1133,13 @@ function heatModeLine(r) {
     return `Volgens schema. Om ${clock(r.next_change_at)} naar ${to}.`;
   }
   return "Volgens schema.";
+}
+
+function comfortBtn(r, dis) {
+  const c = (heat.data && heat.data.comfort) || { temp: 21, hours: 3 };
+  const warming = r.mode === "manual" && r.manual_type === "TIMER" && r.manual_until;
+  const label = warming ? `Warmt op tot ${clock(r.manual_until)}` : `Opwarmen naar ${nl1.format(c.temp)} °C`;
+  return `<button class="btn comfort" data-act="hcomfort" ${dis}>${label}<small>${warming ? "tik om te verlengen" : `${nl0.format(c.hours)} uur, daarna weer volgens schema`}</small></button>`;
 }
 
 function heatCard(r) {
@@ -1147,6 +1159,7 @@ function heatCard(r) {
         <button data-act="hup" ${dis || (shown != null && shown >= 25 ? "disabled" : "")} aria-label="Een halve graad hoger">+</button>
       </div>
     </div>
+    ${comfortBtn(r, dis)}
     <div class="ac-row">
       <div class="ac-modes" role="group" aria-label="Stand">
         <button data-act="hschedule" aria-pressed="${r.mode === "schedule"}" ${dis}>Volgens schema</button>
@@ -1226,6 +1239,7 @@ function initHeating() {
     if (!r) return;
     if (b.dataset.act === "hup") heatNudge(r, 0.5);
     else if (b.dataset.act === "hdown") heatNudge(r, -0.5);
+    else if (b.dataset.act === "hcomfort") heatCommand(r.id, { mode: "comfort" }, (x) => `Warmt op naar ${nl1.format(x.target)} °C tot ${clock(x.manual_until)}.`);
     else if (b.dataset.act === "hschedule") heatCommand(r.id, { mode: "schedule" }, () => "Weer volgens schema.");
     else if (b.dataset.act === "hoff") heatCommand(r.id, { mode: "off" }, () => "Verwarming staat uit in deze kamer.");
   });

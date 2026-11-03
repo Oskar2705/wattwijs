@@ -138,8 +138,12 @@ def parse_room(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def manual_payload(target: float | None, termination: str) -> dict[str, Any]:
-    term = {"type": TERMINATIONS.get(termination, termination)}
+def manual_payload(target: float | None, termination: str, hours: float | None = None) -> dict[str, Any]:
+    """Handmatige stand. Met `hours` geldt hij zo lang (tado-timer), anders volgens `termination`."""
+    if hours:
+        term: dict[str, Any] = {"type": "TIMER", "durationInSeconds": int(round(float(hours) * 3600))}
+    else:
+        term = {"type": TERMINATIONS.get(termination, termination)}
     if target is None:
         return {"setting": {"power": "OFF"}, "termination": term}
     t = round(float(target) * 2) / 2
@@ -291,10 +295,11 @@ class TadoClient:
         raw = await self.request("GET", f"{HOPS}homes/{hid}/rooms")
         return [parse_room(r) for r in (raw or []) if isinstance(r, dict)]
 
-    async def set_manual(self, room_id: int, target: float | None, termination: str) -> None:
+    async def set_manual(self, room_id: int, target: float | None, termination: str,
+                         hours: float | None = None) -> None:
         hid = await self.home_id()
         await self.request("POST", f"{HOPS}homes/{hid}/rooms/{int(room_id)}/manualControl",
-                           manual_payload(target, termination))
+                           manual_payload(target, termination, hours))
 
     async def resume(self, room_id: int) -> None:
         hid = await self.home_id()
@@ -315,7 +320,17 @@ def apply_change(room: dict[str, Any], changes: dict[str, Any], termination: str
     elif changes.get("target") is not None:
         r.update(on=True, target=round(float(changes["target"]) * 2) / 2, mode="manual",
                  manual_type=TERMINATIONS.get(termination), pending=True)
+        if changes.get("hours"):
+            r.update(manual_type="TIMER", manual_until=time.time() + float(changes["hours"]) * 3600)
     return r
+
+
+def comfort_changes(room: dict[str, Any], temp: float | None = None, hours: float | None = None) -> dict[str, Any]:
+    """"Opwarmen": naar de comforttemperatuur (of hoger als hij al hoger stond) voor een paar uur."""
+    t = float(temp if temp is not None else config.tado_comfort_temp)
+    current = room.get("target") if room.get("on") else None
+    return {"target": max(t, float(current)) if current is not None and temp is None else t,
+            "hours": float(hours if hours is not None else config.tado_comfort_hours)}
 
 
 def publish(src: Source, rooms: list[dict[str, Any]], client: TadoClient | None, login: dict[str, Any] | None,
@@ -381,6 +396,8 @@ async def run(src: Source) -> None:
             idx = next((i for i, r in enumerate(rooms) if str(r["id"]) == str(room_id)), None)
             if idx is None:
                 raise KeyError(room_id)
+            if changes.get("mode") == "comfort":
+                changes = comfort_changes(rooms[idx], changes.get("target"), changes.get("hours"))
             term = config.tado_manual_until
             try:
                 if changes.get("mode") == "schedule":
@@ -388,7 +405,7 @@ async def run(src: Source) -> None:
                 elif changes.get("mode") == "off":
                     await client.set_manual(int(room_id), None, term)
                 elif changes.get("target") is not None:
-                    await client.set_manual(int(room_id), float(changes["target"]), term)
+                    await client.set_manual(int(room_id), float(changes["target"]), term, changes.get("hours"))
                 else:
                     raise ValueError("niets te veranderen")
             except TadoRateLimited as exc:

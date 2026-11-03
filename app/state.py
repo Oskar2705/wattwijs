@@ -125,6 +125,10 @@ class LiveState:
             "aircon_configured": self.aircon.configured,
             "aircon_on": self.aircon.get("units_on", now),
             "heating_configured": self.heating.configured,
+            "heating_rooms": [
+                {k: r.get(k) for k in ("id", "name", "room_temp", "target", "on", "heating_pct", "mode")}
+                for r in (self.heating.get("rooms", now) or [])
+            ],
             "heatpump": {
                 k: self.heatpump.get(k, now)
                 for k in ("heat_output_w", "supply_temperature", "outdoor_temperature", "is_on", "fault_code")

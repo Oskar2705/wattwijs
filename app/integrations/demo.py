@@ -293,7 +293,7 @@ class DemoPrices:
 
 @register("heating", "demo", "Demo (tado, 3 kamers)")
 async def run_heating(src: Source) -> None:
-    from .tado import TERMINATIONS, apply_change
+    from .tado import TERMINATIONS, apply_change, comfort_changes
 
     now = time.time()
     rooms = [
@@ -311,6 +311,8 @@ async def run_heating(src: Source) -> None:
 
     async def control(room_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         i = next(i for i, r in enumerate(rooms) if str(r["id"]) == str(room_id))
+        if changes.get("mode") == "comfort":
+            changes = comfort_changes(rooms[i], changes.get("target"), changes.get("hours"))
         if changes.get("target") is not None and not 5 <= float(changes["target"]) <= 25:
             raise ValueError("temperatuur moet tussen 5 en 25 °C liggen")
         await asyncio.sleep(0.6)
@@ -318,7 +320,7 @@ async def run_heating(src: Source) -> None:
         r.pop("pending", None)
         if changes.get("mode") == "schedule":
             r.update(on=True, target=20.0)
-        if r["mode"] == "manual" and r["manual_type"] == "NEXT_TIME_BLOCK":
+        if r["mode"] == "manual" and r["manual_type"] == "NEXT_TIME_BLOCK" and not changes.get("hours"):
             r["manual_until"] = r.get("next_change_at")
         rooms[i] = r
         status["remaining"] -= 1

@@ -248,6 +248,7 @@ def heating_view() -> dict[str, Any]:
         "configured": src.configured,
         "rooms": src.values.get("rooms", []),
         "tado": src.values.get("tado") or {},
+        "comfort": {"temp": config.tado_comfort_temp, "hours": config.tado_comfort_hours},
         "error": src.last_error,
         "updated": src.updated,
     }
@@ -272,6 +273,31 @@ async def heating_logout() -> dict[str, Any]:
     return await act()
 
 
+@app.post("/api/heating/comfort")
+async def heating_comfort(request: Request) -> dict[str, Any]:
+    """Alle kamers (of {"room": id}) opwarmen. Handig voor een iPhone-opdracht "ik kom naar huis"."""
+    src = state.heating
+    if not src.configured or src.control is None:
+        raise HTTPException(404, "Er is geen verwarming om te bedienen.")
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    rooms = src.values.get("rooms") or []
+    ids = [str(body["room"])] if body.get("room") is not None else [str(r["id"]) for r in rooms]
+    if not ids:
+        raise HTTPException(409, "Nog geen kamers bekend; is tado gekoppeld?")
+    changes = {"mode": "comfort", "target": body.get("target"), "hours": body.get("hours")}
+    out = []
+    for rid in ids:
+        try:
+            out.append(await asyncio.wait_for(src.control(rid, dict(changes)), timeout=30))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"Opwarmen lukte niet: {exc}") from None
+    log.info("Verwarming opwarmen: %s", ", ".join(r["name"] for r in out))
+    return {"rooms": out, "text": " ".join(f"{r['name']} warmt op naar {r['target']:g} °C." for r in out)}
+
+
 @app.post("/api/heating/{room_id}")
 async def heating_set(room_id: str, request: Request) -> dict[str, Any]:
     src = state.heating
@@ -281,8 +307,8 @@ async def heating_set(room_id: str, request: Request) -> dict[str, Any]:
         body = await request.json()
     except Exception:  # noqa: BLE001
         raise HTTPException(400, "Ongeldig verzoek.") from None
-    changes = {k: body.get(k) for k in ("target", "mode") if body.get(k) is not None}
-    if changes.get("mode") not in (None, "schedule", "off"):
+    changes = {k: body.get(k) for k in ("target", "mode", "hours") if body.get(k) is not None}
+    if changes.get("mode") not in (None, "schedule", "off", "comfort"):
         raise HTTPException(400, "Onbekende stand.")
     log.info("Verwarming kamer %s: %s", room_id, changes)
     try:

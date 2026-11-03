@@ -99,7 +99,8 @@ The app has to reach the battery, the P1 dongle and (optionally) the inverter **
 1. Open the Klimaat tab, press **Koppel tado**, open the link and log in with the tado account. The app stores a token in `data/tado_token.json`; no password goes into `.env`.
 2. tado allows **100 API requests a day** without an Auto-Assist subscription. The app therefore reads the rooms every `TADO_POLL_MINUTES` (20) and updates a card itself after a command instead of fetching everything again. With Auto-Assist (20,000 a day) you can lower the interval.
 3. A temperature set in the app lasts until the next block in the schedule (`TADO_MANUAL_UNTIL=next_block`) or until you switch the room back to its schedule (`manual`).
-4. Only the tado X line is supported for now; older V3+ homes use a different API.
+4. **Opwarmen** sets the room to `TADO_COMFORT_TEMP` (21 °C) for `TADO_COMFORT_HOURS` (3) and then returns to the schedule. The same action is available as `POST /api/heating/comfort`, so an iPhone Shortcut ("Hey Siri, I'm coming home") can trigger it: add a *Get Contents of URL* action with method POST to `https://<your-app>/api/heating/comfort`, plus an `Authorization` header if you use basic auth.
+5. Only the tado X line is supported for now; older V3+ homes use a different API.
 
 **Email**: any SMTP server works. For Gmail, use an *app password*. Send a test with:
 

@@ -172,3 +172,18 @@ def test_client_login_rooms_commands_and_limit(monkeypatch, tmp_path):
         await real_sleep(0)
 
     asyncio.run(main())
+
+
+def test_comfort_warm_up():
+    r = tado.parse_room({**ROOM, "manualControlTermination": None, "setting": {"power": "ON", "temperature": {"value": 19.0}}})
+    ch = tado.comfort_changes(r, None, None)
+    assert ch["target"] == tado.config.tado_comfort_temp and ch["hours"] == tado.config.tado_comfort_hours
+    # stond hij al hoger, dan niet omlaag
+    hot = {**r, "target": 23.0}
+    assert tado.comfort_changes(hot)["target"] == 23.0
+    # expliciete temperatuur wint
+    assert tado.comfort_changes(hot, 20.0, 1)["target"] == 20.0
+    p = tado.manual_payload(21, "next_block", hours=3)
+    assert p["termination"] == {"type": "TIMER", "durationInSeconds": 10800}
+    after = tado.apply_change(r, {"target": 21, "hours": 3}, "next_block")
+    assert after["manual_type"] == "TIMER" and after["manual_until"] > 0
