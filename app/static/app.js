@@ -291,7 +291,15 @@ function renderLive(d) {
   const parts = [];
   if (hp.supply_temperature != null) parts.push(`aanvoer ${nl1.format(hp.supply_temperature)} °C`);
   if (hp.outdoor_temperature != null) parts.push(`buiten ${nl1.format(hp.outdoor_temperature)} °C`);
-  if (hp.heat_output_w > 50 && n.heatpump_w > 50) parts.push(`maakt ${fmtW(hp.heat_output_w)} warmte (rendement ${nl1.format(hp.heat_output_w / n.heatpump_w)}×)`);
+  // Onder ~300 W draait alleen de circulatiepomp; de "warmte" is dan nawarmte uit de leidingen
+  // en een rendement zegt niets. Boven 8× is de cloudwaarde van stroom of warmte niet van hetzelfde moment.
+  const HP_COMPRESSOR_W = 300, COP_MAX = 8;
+  if (n.heatpump_w != null && n.heatpump_w < HP_COMPRESSOR_W) {
+    parts.push("compressor staat uit");
+  } else if (hp.heat_output_w > 50 && n.heatpump_w >= HP_COMPRESSOR_W) {
+    const cop = hp.heat_output_w / n.heatpump_w;
+    parts.push(`maakt ${fmtW(hp.heat_output_w)} warmte` + (cop >= 1 && cop <= COP_MAX ? ` (rendement ${nl1.format(cop)}×)` : ""));
+  }
   if (Number(hp.fault_code) > 0) parts.push(`storingscode ${esc(hp.fault_code)} (zie de MyDeWarmte-app)`);
   $("#hpDetail").textContent = parts.length ? `Warmtepomp: ${parts.join(", ")}.` : "";
 
