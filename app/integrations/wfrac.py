@@ -211,16 +211,23 @@ def command_params(a: Any, changes: dict[str, Any]) -> dict[Any, Any]:
 # ---------------- de koppeling ----------------
 
 
+# De module weigert te lange ID's met "501 Not supported this command", ook voor
+# getDeviceInfo. De Smart M-Air-app en Home Assistant gebruiken een gewone UUID (36 tekens)
+# als operatorId en een deviceId van rond de 32 tekens; daar blijven we binnen.
+MAX_OPERATOR_ID = 36
+MAX_DEVICE_ID = 32
+
+
 def _ids() -> tuple[str, str]:
     """Vaste operator- en apparaat-ID voor deze installatie (bewaard in de database)."""
     db = get_db()
-    op = db.get_kv("wfrac_operator_id")
-    dev = db.get_kv("wfrac_device_id")
-    if not op:
-        op = f"energiemonitor-{uuid.uuid4()}"
+    op = db.get_kv("wfrac_operator_id") or ""
+    dev = db.get_kv("wfrac_device_id") or ""
+    if not op or len(op) > MAX_OPERATOR_ID:
+        op = str(uuid.uuid4())
         db.set_kv("wfrac_operator_id", op)
-    if not dev:
-        dev = f"energiemonitor-device-{uuid.uuid4().hex[:12]}"
+    if not dev or len(dev) > MAX_DEVICE_ID:
+        dev = f"energiemonitor-{uuid.uuid4().hex[:12]}"
         db.set_kv("wfrac_device_id", dev)
     return op, dev
 

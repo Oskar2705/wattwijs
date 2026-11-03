@@ -129,3 +129,16 @@ def test_old_database_gets_aircon_columns(tmp_path):
     cols = {r["name"] for r in d.q("PRAGMA table_info(minute)")}
     assert {"aircon_wh", "aircon_w"} <= cols
     assert d.totals_for_day("2026-11-01")["import_wh"] == 5
+
+
+def test_ids_are_short_enough_for_the_module(monkeypatch):
+    from app.db import get_db
+    from app.integrations import wfrac
+
+    db = get_db()
+    # oude, te lange ID's uit de eerste versie worden vervangen
+    db.set_kv("wfrac_operator_id", "energiemonitor-" + "x" * 36)
+    db.set_kv("wfrac_device_id", "energiemonitor-device-" + "y" * 12)
+    op, dev = wfrac._ids()
+    assert len(op) <= 36 and len(dev) <= 32
+    assert wfrac._ids() == (op, dev)  # daarna stabiel
