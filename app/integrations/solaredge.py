@@ -153,15 +153,21 @@ async def run_modbus(src: Source) -> None:
           env=("SOLAREDGE_USERNAME", "SOLAREDGE_PASSWORD", "SOLAREDGE_SITE_ID", "SOLAREDGE_CLOUD_POLL_SECONDS"),
           description="Live opwek via het monitoringportaal, elke 2 minuten.")
 async def run_cloud_live(src: Source) -> None:
+    failures = 0
     while True:
         try:
             p = await web.live_power_w()
             src.update(power_w=max(float(p or 0.0), 0.0))
+            if failures:
+                log.info("SolarEdge portaal: live opwek komt weer binnen (na %d mislukte poging(en))", failures)
+            failures = 0
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
-            msg = f"portaal: {type(exc).__name__}: {exc}"
-            if src.last_error != msg:
-                log.warning("SolarEdge %s", msg)
+            failures += 1
+            msg = f"portaal: {type(exc).__name__}: {exc}".rstrip(": ")
+            if failures == 1 or failures % 10 == 0:
+                log.warning("SolarEdge %s (poging %d)", msg, failures)
             src.error(msg)
-        await asyncio.sleep(config.se_cloud_poll_s)
+        # Na een mislukte poging (vaak een trage portaal-login vlak na het opstarten) sneller opnieuw.
+        await asyncio.sleep(config.se_cloud_poll_s if not failures else min(config.se_cloud_poll_s, 30 * failures))
