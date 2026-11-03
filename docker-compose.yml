@@ -5,9 +5,10 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8000:8000"
+      # Host port: set HOST_PORT in .env to use another one, e.g. HOST_PORT=8095
+      - "${HOST_PORT:-8000}:8000"
     volumes:
       - ./data:/data
-    # If you run Watchtower, keep it from replacing this locally built image:
-    # labels:
-    #   - com.centurylinklabs.watchtower.enable=false
+    labels:
+      # The image is built locally, so Watchtower should leave it alone
+      - com.centurylinklabs.watchtower.enable=false
