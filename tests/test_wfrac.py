@@ -50,6 +50,7 @@ def test_unit_view_from_real_frames():
     assert (v["min"], v["max"]) == (16.0, 30.0)
     assert v["fault"] is None
     assert v["fan"] == "auto"
+    assert v["air"] in {"3d", "swing", "up", "mid", "down"} and isinstance(v["has_3d"], bool)
     u.aircon = decode(ON_HEAT)
     assert unit_view(u, now=1e12)["mode"] == "heat"
     u.aircon = decode(OFF)
@@ -69,6 +70,10 @@ def test_command_params_and_validation():
     with pytest.raises(ValueError):
         command_params(a, {"mode": "turbo"})
     assert command_params(a, {"fan": "quiet"}) == {AirconCommands.AirFlow: 1}
+    assert command_params(a, {"air": "3d"}) == {AirconCommands.Entrust: True}
+    assert command_params(a, {"air": "down"}) == {AirconCommands.Entrust: False, AirconCommands.WindDirectionUD: 4}
+    with pytest.raises(ValueError):
+        command_params(a, {"air": "sideways"})
     with pytest.raises(ValueError):
         command_params(a, {"fan": "eco"})
     with pytest.raises(ValueError):

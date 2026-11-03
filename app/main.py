@@ -217,7 +217,7 @@ async def aircon_set(unit_id: str, request: Request) -> dict[str, Any]:
         body = await request.json()
     except Exception:  # noqa: BLE001
         raise HTTPException(400, "Ongeldig verzoek.") from None
-    changes = {k: body.get(k) for k in ("on", "mode", "target", "fan") if body.get(k) is not None}
+    changes = {k: body.get(k) for k in ("on", "mode", "target", "fan", "air") if body.get(k) is not None}
     log.info("Airco %s: %s", unit_id, changes)
     try:
         # Houdt de app van iemand anders de unit net vast, dan wacht pywfrac tot 60 s.

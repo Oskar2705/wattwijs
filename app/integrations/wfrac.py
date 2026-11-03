@@ -39,6 +39,14 @@ MODE_NAMES = {v: k for k, v in MODES.items()}
 # bestaat niet in het wifi-protocol (staat ECO aan, dan meldt de unit de laagste stap).
 FANS = {"auto": 0, "quiet": 1, "low": 2, "medium": 3, "high": 4}
 FAN_NAMES = {v: k for k, v in FANS.items()}
+# Luchtstroom: "3d" is 3D-auto (Entrust), de rest is de verticale lamel (1 = hoogst, 4 = laagst).
+AIRS = {"swing": 0, "up": 1, "mid": 2, "down": 4}
+AIR_NAMES = {0: "swing", 1: "up", 2: "mid", 3: "mid", 4: "down"}
+
+
+def _has_3d(a: Any) -> bool:
+    caps = getattr(a, "Capabilities", None)
+    return bool(getattr(caps, "entrust", True))
 
 FAN_ONLY_W = 25.0  # binnenunit aan, compressor stil
 STEP_KWH = 0.25
@@ -158,6 +166,8 @@ def unit_view(u: Unit, now: float | None = None) -> dict[str, Any]:
         mode=mode,
         target=float(a.PresetTemp),
         fan=FAN_NAMES.get(int(a.AirFlow)),
+        air="3d" if a.Entrust else AIR_NAMES.get(int(a.WindDirectionUD)),
+        has_3d=_has_3d(a),
         room_temp=_t(a.IndoorTemp),
         outdoor_temp=_t(a.OutdoorTemp),
         compressor=bool(getattr(a, "CompressorRunning", False)),
@@ -189,7 +199,7 @@ def _range(a: Any, mode: str) -> tuple[float, float]:
 
 
 def command_params(a: Any, changes: dict[str, Any]) -> dict[Any, Any]:
-    """Vertaalt {"on": bool, "mode": str, "target": float, "fan": str} naar pywfrac-commando's."""
+    """Vertaalt {"on": bool, "mode": str, "target": float, "fan": str, "air": str} naar pywfrac-commando's."""
     from pywfrac import AirconCommands
 
     params: dict[Any, Any] = {}
@@ -204,6 +214,17 @@ def command_params(a: Any, changes: dict[str, Any]) -> dict[Any, Any]:
         if fan not in FANS:
             raise ValueError(f"onbekende ventilatorstand: {fan}")
         params[AirconCommands.AirFlow] = FANS[fan]
+    air = changes.get("air")
+    if air is not None:
+        if air == "3d":
+            if not _has_3d(a):
+                raise ValueError("deze airco heeft geen 3D-auto")
+            params[AirconCommands.Entrust] = True
+        elif air in AIRS:
+            params[AirconCommands.Entrust] = False
+            params[AirconCommands.WindDirectionUD] = AIRS[air]
+        else:
+            raise ValueError(f"onbekende luchtstroom: {air}")
     if "on" in changes and changes["on"] is not None:
         params[AirconCommands.Operation] = bool(changes["on"])
     target = changes.get("target")
