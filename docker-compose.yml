@@ -1,0 +1,13 @@
+services:
+  energiemonitor:
+    build: .
+    container_name: energiemonitor
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    # If you run Watchtower, keep it from replacing this locally built image:
+    # labels:
+    #   - com.centurylinklabs.watchtower.enable=false
