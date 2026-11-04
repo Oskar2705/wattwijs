@@ -79,6 +79,9 @@ class LiveState:
           battery_w  + = batterij laadt,     - = batterij ontlaadt
           solar_w    totale opwek (SolarEdge + eventuele panelen op de batterij)
           house_w    totaal verbruik van het huis (incl. warmtepomp en airco's)
+          house_net_w  zelfde, maar niet afgekapt op 0. Meter en omvormer worden niet op
+                     hetzelfde moment gelezen; afkappen telt dat verschil steeds als extra
+                     verbruik. Voor de energie per minuut gebruiken we daarom deze waarde.
           aircon_w   geschat verbruik van alle airco's samen
         """
         now = now or time.time()
@@ -101,9 +104,10 @@ class LiveState:
         if se_known and (se is not None or self.battery.fresh(now)):
             solar = (se or 0.0) + pv_batt
 
-        house = None
+        house = house_net = None
         if grid is not None and batt_ac is not None and se_known:
-            house = max(grid + (se or 0.0) + batt_ac, 0.0)
+            house_net = grid + (se or 0.0) + batt_ac
+            house = max(house_net, 0.0)
 
         other = None
         if house is not None and hp is not None:
@@ -119,6 +123,7 @@ class LiveState:
             "battery_configured": self.battery.configured,
             "soc": _r(soc),
             "house_w": _r(house),
+            "house_net_w": _r(house_net),
             "heatpump_w": _r(hp),
             "other_w": _r(other),
             "aircon_w": _r(ac),

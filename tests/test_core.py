@@ -277,3 +277,12 @@ def test_consumption_and_self_sufficiency_survive_gaps():
     t2 = {"import_wh": 1000, "export_wh": 0, "solar_wh": 500, "house_wh": 1500, "charge_wh": 200, "discharge_wh": 180}
     assert consumption_wh(t2) == 1500
     assert self_sufficiency({"import_wh": 10, "house_wh": 20}) is None
+
+
+def test_house_energy_not_biased_by_timing_skew():
+    # P1 shows export before the inverter reading catches up: house_net briefly negative.
+    acc = MinuteAccumulator(0)
+    acc.add({"grid_w": -500, "solar_w": 300, "house_w": 0, "house_net_w": -200}, 30)
+    acc.add({"grid_w": 100, "solar_w": 500, "house_w": 600, "house_net_w": 600}, 30)
+    balance = acc.energy["import_wh"] - acc.energy["export_wh"] + acc.energy["solar_wh"]
+    assert acc.energy["house_wh"] == pytest.approx(balance)

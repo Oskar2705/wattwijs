@@ -37,10 +37,15 @@ class MinuteAccumulator:
                 self.energy["charge_wh"] += bat * h
             else:
                 self.energy["discharge_wh"] += -bat * h
-        for key, col in (("solar_w", "solar_wh"), ("heatpump_w", "heatpump_wh"), ("house_w", "house_wh"), ("aircon_w", "aircon_wh")):
+        for key, col in (("solar_w", "solar_wh"), ("heatpump_w", "heatpump_wh"), ("aircon_w", "aircon_wh")):
             v = snap.get(key)
             if v is not None:
                 self.energy[col] += max(v, 0.0) * h
+        # Huisverbruik zonder afkappen: kortstondig negatieve waarden komen door meter en
+        # omvormer die niet tegelijk gelezen worden, en vallen over de minuut tegen elkaar weg.
+        house = snap.get("house_net_w", snap.get("house_w"))
+        if house is not None:
+            self.energy["house_wh"] += house * h
         for c in POWER_COLS:
             if c == "soc":
                 continue
