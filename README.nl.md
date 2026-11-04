@@ -18,7 +18,7 @@ Hij is gemaakt voor een Nederlands huishouden met een warmtepomp, een thuisbatte
 - **Alles wordt per minuut opgeslagen** in SQLite. Je kunt het per uur, dag of maand terugkijken en als CSV downloaden.
 - **Controle per zonnepaneel.** Elke avond wordt elk paneel vergeleken met de panelen naast hem in dezelfde rij. Blijft er een achter of valt er een uit, dan krijg je een mail en een pushmelding. Vaste schaduw leert de app vanzelf, dus die geeft geen valse meldingen. Het dak wordt getekend zoals in het SolarEdge-portaal.
 - **Dynamische prijzen** per kwartier, met kosten en opbrengst in euro's, het goedkoopste blok van 2 uur en waarschuwingen voor negatieve prijzen.
-- **Installeerbare webapp met pushmeldingen**, ook op de iPhone: een ochtendtip met het goedkoopste moment voor de vaatwasser, paneelmeldingen, records en een weekoverzicht.
+- **Installeerbare webapp met pushmeldingen**, ook op de iPhone: een ochtendbericht met de zonverwachting en het beste moment om stroom te gebruiken, een avondoverzicht van de dag, paneelmeldingen en een weekoverzicht.
 - **Tabblad Klimaat**: de temperatuur per kamer instellen op tado° X, en airco's aan- en uitzetten met stand, temperatuur, luchtstroom en ventilator, met een uit-timer per airco of voor allemaal. Het verbruik van de airco's wordt per unit geschat.
 - **Standaard alleen lezen.** De app verandert nooit een instelling op een apparaat, behalve de airco's en de tado-verwarming als iemand het tabblad Klimaat gebruikt (de airco's zet je op alleen lezen met `AIRCO_CONTROL=0`).
 - **Demomodus** met nepgegevens, om het zonder apparaten te proberen.
@@ -159,11 +159,11 @@ Pushmeldingen hebben **https** nodig. Het makkelijkst is `tailscale serve --bg -
 
 | Soort | Wanneer |
 |---|---|
-| Ochtendtip | `PUSH_MORNING_TIME`: het goedkoopste blok van `PUSH_BLOCK_HOURS` uur binnen `PUSH_BLOCK_WINDOW`, het duurste moment, negatieve prijzen, gisteren in het kort, en een paneel dat nog stuk is. Met `LATITUDE`/`LONGITUDE` noemt hij ook het zonnigste blok met het verwachte overschot (zie hieronder) |
+| Ochtend | `PUSH_MORNING_TIME`: met `LATITUDE`/`LONGITUDE` de verwachte zonuren en opwek van vandaag en het blok met het grootste overschot (zie hieronder); het goedkoopste blok van `PUSH_BLOCK_HOURS` uur binnen `PUSH_BLOCK_WINDOW`, het duurste moment, negatieve prijzen, en een paneel dat nog stuk is |
 | Zonnepaneel | direct na de avondcontrole, als een paneel kapot gaat of weer werkt |
 | Negatieve prijs | rond 13:00, als morgen de prijs negatief wordt |
 | Teruglevering | vanaf `CONTRACT_START`: het huis levert al `PUSH_EXPORT_MINUTES` minuten meer dan `PUSH_EXPORT_W` terug (en de batterij is vol). In het stookseizoen met de tip om de verwarming een graad hoger te zetten, en een herinnering om `PUSH_HEAT_BACK_TIME` |
-| Records | `PUSH_EVENING_TIME`: een opwekrecord, een dag die voor minstens 95% zelfvoorzienend was, of elke 500 kWh opgewekt |
+| Avondoverzicht | `PUSH_EVENING_TIME` (standaard 21:00): de opwek van vandaag (tegenover de verwachting van de ochtend), het verbruik en het deel eigen stroom, de warmtepomp en airco's, teruglevering en afname, de kosten tot nu, en een opwekrecord of mijlpaal als die er is |
 | Weekoverzicht | zondag om `PUSH_WEEKLY_TIME` |
 | Technisch | een apparaat geeft al `OFFLINE_ALERT_MINUTES` minuten niets door (staat standaard uit) |
 

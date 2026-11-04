@@ -43,11 +43,13 @@ def enabled() -> bool:
 # ---------------- Open-Meteo ----------------
 
 
-def parse_open_meteo(data: dict[str, Any]) -> dict[int, float]:
-    """Antwoord -> {begin van het uur (unix): straling W/m²}. Open-Meteo geeft het einde van het uur."""
+def parse_open_meteo(data: dict[str, Any], key: str = "shortwave_radiation") -> dict[int, float]:
+    """Antwoord -> {begin van het uur (unix): waarde}. Open-Meteo geeft het einde van het uur.
+
+    `shortwave_radiation` is in W/m², `sunshine_duration` in seconden zon in dat uur."""
     hourly = data.get("hourly") or {}
     times = hourly.get("time") or []
-    vals = hourly.get("shortwave_radiation") or []
+    vals = hourly.get(key) or []
     out: dict[int, float] = {}
     for t, v in zip(times, vals):
         if v is None:
@@ -56,11 +58,11 @@ def parse_open_meteo(data: dict[str, Any]) -> dict[int, float]:
     return out
 
 
-async def fetch(session: aiohttp.ClientSession) -> dict[int, float]:
+async def fetch(session: aiohttp.ClientSession) -> dict[str, dict[int, float]]:
     params = {
         "latitude": f"{config.latitude:.4f}",
         "longitude": f"{config.longitude:.4f}",
-        "hourly": "shortwave_radiation",
+        "hourly": "shortwave_radiation,sunshine_duration",
         "past_days": str(PAST_DAYS),
         "forecast_days": "2",
         "timeformat": "unixtime",
@@ -68,7 +70,8 @@ async def fetch(session: aiohttp.ClientSession) -> dict[int, float]:
     }
     async with session.get(URL, params=params) as r:
         r.raise_for_status()
-        return parse_open_meteo(await r.json())
+        data = await r.json()
+    return {"rad": parse_open_meteo(data), "sun": parse_open_meteo(data, "sunshine_duration")}
 
 
 # ---------------- leren uit de eigen geschiedenis ----------------
@@ -155,8 +158,12 @@ def best_block(hours: list[dict[str, Any]], length: int, min_surplus_w: float) -
 # ---------------- samen ----------------
 
 
-async def refresh(force: bool = False) -> dict[int, float] | None:
-    """Haalt de straling op (hooguit één keer per uur) en bewaart hem in de database."""
+def _load(cached: dict[str, Any]) -> dict[str, dict[int, float]]:
+    return {k: {int(t): v for t, v in (cached.get(k) or {}).items()} for k in ("rad", "sun")}
+
+
+async def refresh(force: bool = False) -> dict[str, dict[int, float]] | None:
+    """Haalt straling en zonuren op (hooguit één keer per uur) en bewaart ze in de database."""
     if not enabled():
         return None
     db = get_db()
@@ -165,50 +172,78 @@ async def refresh(force: bool = False) -> dict[int, float] | None:
         cached = json.loads(db.get_kv(KV_KEY) or "null")
     except ValueError:
         cached = None
-    if cached and not force and time.time() - cached.get("at", 0) < REFRESH_S:
-        return {int(k): v for k, v in cached["rad"].items()}
+    fresh = cached and "sun" in cached and time.time() - cached.get("at", 0) < REFRESH_S
+    if fresh and not force:
+        return _load(cached)
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            rad = await fetch(session)
+            data = await fetch(session)
     except Exception as exc:  # noqa: BLE001
         log.warning("Zonverwachting ophalen mislukt: %s", exc)
-        return {int(k): v for k, v in cached["rad"].items()} if cached else None
-    db.set_kv(KV_KEY, json.dumps({"at": time.time(), "rad": rad}))
-    return rad
+        return _load(cached) if cached else None
+    db.set_kv(KV_KEY, json.dumps({"at": time.time(), **data}))
+    return data
 
 
-def plan_today(rad: dict[int, float], now: datetime) -> dict[str, Any] | None:
-    """Het zonnigste blok van vandaag, binnen PUSH_BLOCK_WINDOW en vanaf nu."""
-    nowts = int(now.timestamp())
-    actual = hourly_actuals(nowts - PAST_DAYS * 86400, nowts - nowts % HOUR)
-    cal = calibrate(rad, actual)
-    if cal is None:
-        return None
+def _window(now: datetime) -> tuple[int, int]:
     start_s, end_s = config.push_block_window.split("-")
     d = now.date()
     w_start = int(datetime.combine(d, dtime(*map(int, start_s.split(":"))), tzinfo=config.tz).timestamp())
     w_end = int(datetime.combine(d, dtime(*map(int, end_s.split(":"))), tzinfo=config.tz).timestamp())
-    hours = predict(rad, cal, baseline(actual), max(w_start, nowts - nowts % HOUR), w_end)
-    length = max(1, round(config.push_block_hours))
-    return best_block(hours, length, config.solar_tip_min_w)
+    return w_start, w_end
 
 
-async def sun_block(now: datetime) -> dict[str, Any] | None:
-    """Voor de ochtendtip: het blok met het meeste verwachte overschot, of None."""
+def outlook(data: dict[str, dict[int, float]], now: datetime) -> dict[str, Any]:
+    """Verwachting voor vandaag: zonuren, opwek (kWh) en het blok met het meeste overschot.
+
+    `solar_kwh` en `block` zijn None als er nog te weinig eigen geschiedenis is om te ijken."""
+    rad, sun = data.get("rad") or {}, data.get("sun") or {}
+    nowts = int(now.timestamp())
+    d0 = int(datetime.combine(now.date(), dtime.min, tzinfo=config.tz).timestamp())
+    d1 = d0 + 24 * HOUR  # (op de dagen van de zomertijdwissel klopt dat op een uur na; geen bezwaar)
+    out: dict[str, Any] = {
+        "sun_hours": round(sum(v for t, v in sun.items() if d0 <= t < d1) / 3600, 1) if sun else None,
+        "solar_kwh": None,
+        "block": None,
+    }
+    actual = hourly_actuals(nowts - PAST_DAYS * 86400, nowts - nowts % HOUR)
+    cal = calibrate(rad, actual)
+    if cal is None:
+        return out
+    base = baseline(actual)
+    day = predict(rad, cal, base, d0, d1)
+    out["solar_kwh"] = round(sum(h["solar_w"] for h in day) / 1000, 1)
+    w_start, w_end = _window(now)
+    hours = [h for h in day if max(w_start, nowts - nowts % HOUR) <= h["start"] < w_end]
+    out["block"] = best_block(hours, max(1, round(config.push_block_hours)), config.solar_tip_min_w)
+    return out
+
+
+def plan_today(rad: dict[int, float], now: datetime) -> dict[str, Any] | None:
+    """Het zonnigste blok van vandaag, binnen PUSH_BLOCK_WINDOW en vanaf nu."""
+    return outlook({"rad": rad}, now)["block"]
+
+
+async def day_outlook(now: datetime) -> dict[str, Any] | None:
+    """Voor het ochtendbericht. Bewaart de verwachte opwek, zodat het avondoverzicht kan vergelijken."""
     if not enabled():
         return None
-    rad = await refresh()
-    if not rad:
+    data = await refresh()
+    if not data:
         return None
     try:
-        blk = plan_today(rad, now)
-        if blk:
-            log.info("Zonverwachting: %s-%s ongeveer %d W over",
-                     datetime.fromtimestamp(blk["start"], config.tz).strftime("%H:%M"),
-                     datetime.fromtimestamp(blk["end"], config.tz).strftime("%H:%M"), blk["surplus_w"])
-        else:
-            log.info("Zonverwachting: vandaag geen blok met genoeg zonnestroom over (of nog te weinig geschiedenis)")
-        return blk
+        o = outlook(data, now)
     except Exception:  # noqa: BLE001
         log.exception("Zonverwachting berekenen mislukt")
         return None
+    log.info("Zonverwachting: %s zonuren, %s kWh, blok %s", o["sun_hours"], o["solar_kwh"],
+             f"{datetime.fromtimestamp(o['block']['start'], config.tz):%H:%M} ({o['block']['surplus_w']} W over)"
+             if o["block"] else "-")
+    if o["solar_kwh"] is not None:
+        get_db().set_kv(f"solar_expected_{now.date().isoformat()}", str(o["solar_kwh"]))
+    return o
+
+
+async def sun_block(now: datetime) -> dict[str, Any] | None:
+    o = await day_outlook(now)
+    return o["block"] if o else None

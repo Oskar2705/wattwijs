@@ -115,12 +115,14 @@ def test_morning_message():
     _seed_prices(d)
     get_db().x("INSERT INTO panel_alert(serial,name,opened_day,deviation,mail_status) VALUES('X','1.1.4','2030-03-01',-97,'x')")
     now = datetime.combine(d, datetime.min.time(), tzinfo=config.tz).replace(hour=7, minute=30)
-    title, body = notifier.build_morning(now)
+    title, body = notifier.build_morning(now)  # zonder zonverwachting: zoals vroeger, op prijs
     assert title == "Vandaag het goedkoopst: 13:00–15:00"
-    assert "13:00–15:00" in body and "Duurst rond 18:00" in body
+    assert "Goedkoopste stroom: 13:00–15:00" in body and "Duurst rond 18:00" in body
     assert "Tussen 14:00 en 15:00 is de prijs negatief" in body
-    assert "Gisteren: 8,4 kWh opgewekt" in body
     assert "Zonnepaneel 1.1.4 doet het nog steeds niet goed" in body
+    title, body = notifier.build_morning(now, {"sun_hours": 4.2, "solar_kwh": 6.3, "block": None})
+    assert title == "Vandaag zo'n 4 uur zon en ongeveer 6,3 kWh zonnestroom"
+    assert "Gisteren was het 8,4 kWh." in body and "weinig zonnestroom over" in body
     get_db().x("DELETE FROM panel_alert WHERE serial='X'")
 
 
@@ -130,8 +132,13 @@ def test_evening_record_and_weekly():
         _seed_day(d0 + timedelta(days=i), solar_scale=1.0)
     rec = d0 + timedelta(days=20)
     _seed_day(rec, solar_scale=1.5)
+    get_db().set_kv(f"solar_expected_{rec.isoformat()}", "11.0")
     title, body = notifier.build_evening(rec)
-    assert "record" in title.lower() and "12,6 kWh" in body
+    assert title.startswith("Vandaag") and "eigen stroom" in title
+    assert "Opgewekt: 12,6 kWh (verwacht was 11,0 kWh)." in body
+    assert "Verbruikt:" in body and "% van eigen panelen" in body
+    assert "Nieuw record" in body
+    assert notifier.build_evening(d0 + timedelta(days=5))[1].count("Nieuw record") == 0
     sunday = date(2031, 5, 18)
     assert sunday.weekday() == 6
     title, body = notifier.build_weekly(sunday)

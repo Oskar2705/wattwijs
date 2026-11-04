@@ -78,28 +78,39 @@ def test_best_block_skips_gaps():
     assert S.best_block(hours, 2, 600)["surplus_w"] == 1000
 
 
-def test_morning_message_with_sun(monkeypatch):
+def test_outlook_sun_hours_and_yield(monkeypatch):
+    monkeypatch.setattr(config, "latitude", 53.2)
+    monkeypatch.setattr(config, "longitude", 6.6)
+    today = date(2032, 6, 15)  # dezelfde geschiedenis als hierboven
+    rad: dict[int, float] = {}
+    for i in range(1, 11):
+        rad.update(_rad_for(today - timedelta(days=i), scale=0.6 + 0.04 * i))
+    rad.update(_rad_for(today))
+    d0 = int(datetime.combine(today, datetime.min.time(), tzinfo=config.tz).timestamp())
+    sun = {d0 + h * 3600: 3600.0 if 10 <= h < 14 else 0.0 for h in range(24)}
+    now = datetime.combine(today, datetime.min.time(), tzinfo=config.tz).replace(hour=7, minute=30)
+    o = S.outlook({"rad": rad, "sun": sun}, now)
+    assert o["sun_hours"] == 4.0
+    expected = sum(rad[t] for t in rad if d0 <= t < d0 + 86400) * FACTOR / 1000
+    assert abs(o["solar_kwh"] - expected) < 0.2
+    assert notifier.hm(o["block"]["start"]) == "11:00"
+
+
+def test_morning_message_with_sun():
     d = date(2033, 4, 2)
     start = int(datetime.combine(d, datetime.min.time(), tzinfo=config.tz).timestamp())
     get_db().save_prices([(start + q * 900, d.isoformat(), 0.02 if 76 <= q < 84 else 0.10,
                            0.15 if 76 <= q < 84 else 0.23) for q in range(96)])
     now = datetime.combine(d, datetime.min.time(), tzinfo=config.tz).replace(hour=7, minute=30)
-    sun = {"start": start + 11 * 3600, "end": start + 13 * 3600, "surplus_w": 1800, "solar_w": 2200}
-
-    # Nog salderen: prijs voorop, zon als extra regel
-    monkeypatch.setattr(config, "contract_start", "2099-01-01")
-    title, body = notifier.build_morning(now, sun)
-    assert title == "Vandaag het goedkoopst: 19:00–21:00"
-    assert "Meeste zon: 11:00–13:00, naar verwachting zo'n 1,8 kW zonnestroom over." in body
-
-    # Na salderen: zon voorop, prijs als terugvaloptie
-    monkeypatch.setattr(config, "contract_start", "2033-01-01")
-    title, body = notifier.build_morning(now, sun)
-    assert title == "Vandaag zon over: 11:00–13:00"
-    assert body.startswith("Beste moment voor vaatwasser of wasmachine: 11:00–13:00.")
-    assert "dan is 19:00–21:00 het goedkoopst" in body
-    assert "Meeste zon" not in body
-
-    # Geen zon verwacht: zoals altijd
+    blk = {"start": start + 11 * 3600, "end": start + 13 * 3600, "surplus_w": 1800, "solar_w": 2200}
+    title, body = notifier.build_morning(now, {"sun_hours": 0.4, "solar_kwh": 9.2, "block": blk})
+    assert title == "Vandaag nauwelijks zon en ongeveer 9,2 kWh zonnestroom"
+    assert "Meeste stroom over tussen 11:00 en 13:00: zo'n 1,8 kW boven het gewone verbruik." in body
+    assert "warmtepomp een graadje hoger" in body  # april: stookseizoen
+    assert "Goedkoopste stroom: 19:00–21:00" in body
+    # zonder eigen geschiedenis: alleen de zonuren
+    title, _ = notifier.build_morning(now, {"sun_hours": 6.6, "solar_kwh": None, "block": None})
+    assert title == "Vandaag zo'n 7 uur zon"
+    # geen zonverwachting: zoals altijd
     title, _ = notifier.build_morning(now, None)
     assert title == "Vandaag het goedkoopst: 19:00–21:00"

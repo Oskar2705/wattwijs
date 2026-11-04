@@ -970,7 +970,8 @@ async function renderPush() {
       <label class="switch"><input type="checkbox" data-kind="${k.key}" ${prefs[k.key] ? "checked" : ""} aria-label="${esc(k.label)}"><span></span></label></li>`).join("")}</ul>
     <div class="btns">
       <button class="btn ghost" id="pushTest">Stuur een testmelding</button>
-      <button class="btn ghost" id="pushMorning">Stuur de ochtendtip nu</button>
+      <button class="btn ghost" id="pushMorning">Stuur het ochtendbericht nu</button>
+      <button class="btn ghost" id="pushEvening">Stuur het avondoverzicht nu</button>
       <button class="btn ghost" id="pushExport">Voorbeeld terugleverbericht</button>
       <button class="btn ghost" id="pushOff">Meldingen uitzetten</button>
     </div>
@@ -986,7 +987,9 @@ async function renderPush() {
   $("#pushExport").addEventListener("click", () => postJSON("/api/push/test", { endpoint: sub.endpoint, kind: "export" })
     .then(() => pushMsg("Voorbeeld verstuurd.")).catch((err) => pushMsg(`Versturen lukte niet: ${err.message}`, true)));
   $("#pushMorning").addEventListener("click", () => postJSON("/api/push/test", { endpoint: sub.endpoint, kind: "morning" })
-    .then(() => pushMsg("Ochtendtip verstuurd.")).catch((err) => pushMsg(`Versturen lukte niet: ${err.message}`, true)));
+    .then(() => pushMsg("Ochtendbericht verstuurd.")).catch((err) => pushMsg(`Versturen lukte niet: ${err.message}`, true)));
+  $("#pushEvening").addEventListener("click", () => postJSON("/api/push/test", { endpoint: sub.endpoint, kind: "evening" })
+    .then(() => pushMsg("Avondoverzicht verstuurd.")).catch((err) => pushMsg(`Versturen lukte niet: ${err.message}`, true)));
   $("#pushOff").addEventListener("click", async () => {
     await postJSON("/api/push/unsubscribe", { endpoint: sub.endpoint }).catch(() => {});
     await sub.unsubscribe().catch(() => {});

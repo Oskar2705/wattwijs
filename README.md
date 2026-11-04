@@ -18,7 +18,7 @@ It was built for one Dutch household with a heat pump, a home battery, solar pan
 - **Everything logged per minute** in SQLite. You can browse it per hour, day or month and download it as CSV.
 - **Per-panel check for solar panels.** Every evening each panel is compared with its neighbours in the same row. When one keeps falling behind or dies, you get an email and a push notification. The app learns fixed shading by itself, so it doesn't send false alarms. The roof is drawn the way the SolarEdge portal draws it.
 - **Dynamic prices** (15-minute resolution) with costs and revenue in euros, the cheapest 2-hour block of the day, and warnings for negative prices.
-- **Installable web app with push notifications**, including on iPhone: a morning tip with the cheapest time to run the dishwasher, panel alerts, daily records and a weekly summary.
+- **Installable web app with push notifications**, including on iPhone: a morning message with the sun forecast and the best time to use power, an evening summary of the day, panel alerts and a weekly summary.
 - **Climate tab**: set the temperature per room on tado° X, and switch air conditioners on or off with mode, temperature, air direction and fan speed, and set an off timer per unit or for all of them. Air conditioner usage is estimated per unit.
 - **Read-only by default.** The app never changes a setting on any device, except the air conditioners and the tado° heating when someone uses the Klimaat tab (`AIRCO_CONTROL=0` makes the air conditioners read-only).
 - **Demo mode** with simulated data, so you can try it without any hardware.
@@ -161,11 +161,11 @@ Push needs **HTTPS**. The easiest way is `tailscale serve --bg --https=8443 http
 
 | Type | When |
 |---|---|
-| Morning tip | `PUSH_MORNING_TIME`: the cheapest `PUSH_BLOCK_HOURS`-hour block within `PUSH_BLOCK_WINDOW`, the most expensive moment, negative prices, yesterday in short, and a panel that is still broken. With `LATITUDE`/`LONGITUDE` set it also names the sunniest block with the expected surplus (see below) |
+| Morning | `PUSH_MORNING_TIME`: with `LATITUDE`/`LONGITUDE` the expected sun hours and solar yield for today and the block with the largest surplus (see below); the cheapest `PUSH_BLOCK_HOURS`-hour block within `PUSH_BLOCK_WINDOW`, the most expensive moment, negative prices, and a panel that is still broken |
 | Solar panel | right after the evening check, when a panel breaks or recovers |
 | Negative price | around 13:00, when tomorrow has negative prices |
 | Export | from `CONTRACT_START`: the house has exported more than `PUSH_EXPORT_W` for `PUSH_EXPORT_MINUTES` (and the battery is full). In the heating season it suggests turning the heating up a degree, with a reminder at `PUSH_HEAT_BACK_TIME` |
-| Records | `PUSH_EVENING_TIME`: a production record, a day that was at least 95% self-sufficient, or every 500 kWh produced |
+| Evening summary | `PUSH_EVENING_TIME` (default 21:00): today's yield (against the morning forecast), use and the share of your own power, the heat pump and air conditioners, export and import, the cost so far, and a production record or milestone when there is one |
 | Weekly summary | Sunday at `PUSH_WEEKLY_TIME` |
 | Technical | a device has been silent for `OFFLINE_ALERT_MINUTES` (off by default) |
 

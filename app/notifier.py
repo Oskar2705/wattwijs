@@ -85,50 +85,64 @@ def kw(w: float) -> str:
     return f"{w / 1000:.1f}".replace(".", ",") + " kW"
 
 
-def build_morning(now: datetime, sun: dict[str, Any] | None = None) -> tuple[str, str] | None:
-    """Ochtendtip. `sun` is het zonnigste blok van vandaag (zie solarforecast.sun_block), of None."""
+def _num(v: float) -> str:
+    return f"{v:.1f}".replace(".", ",")
+
+
+def sun_hours_text(h: float) -> str:
+    if h < 0.75:
+        return "nauwelijks zon"
+    if h < 1.5:
+        return "zo'n 1 uur zon"
+    return f"zo'n {round(h):.0f} uur zon"
+
+
+def build_morning(now: datetime, outlook: dict[str, Any] | None = None) -> tuple[str, str] | None:
+    """Ochtendbericht: zonverwachting, beste moment om stroom te gebruiken, prijzen en panelen.
+
+    `outlook` komt van solarforecast.day_outlook: {"sun_hours", "solar_kwh", "block"} of None."""
     db = get_db()
     today = now.date()
     lines: list[str] = []
     title = "Goedemorgen"
+    o = outlook or {}
+    sun_h, solar_kwh, sun = o.get("sun_hours"), o.get("solar_kwh"), o.get("block")
 
+    # zon
+    if sun_h is not None or solar_kwh is not None:
+        parts = []
+        if sun_h is not None:
+            parts.append(sun_hours_text(sun_h))
+        if solar_kwh is not None:
+            parts.append(f"ongeveer {_num(solar_kwh)} kWh zonnestroom")
+        title = "Vandaag " + " en ".join(parts)  # de kop zegt het al; in de tekst alleen de vergelijking
+        y = _totals((today - timedelta(days=1)).isoformat())
+        if solar_kwh is not None and (y.get("minutes") or 0) > 600:
+            lines.append(f"Gisteren was het {kwh(y['solar_wh'])}.")
+        if sun:
+            extra = " of de warmtepomp een graadje hoger" if exportwatch.heating_season(today, None) else ""
+            lines.append(f"Meeste stroom over tussen {hm(sun['start'])} en {hm(sun['end'])}: zo'n {kw(sun['surplus_w'])} "
+                         f"boven het gewone verbruik. Goed moment voor vaatwasser, wasmachine{extra}.")
+        elif solar_kwh is not None:
+            lines.append("Er blijft naar verwachting weinig zonnestroom over: die gaat vooral op aan het gewone verbruik.")
+
+    # prijs
     s, e = _day_bounds(today)
     rows = db.prices_between(s, e)
     block = best_block_today(now) if rows else None
-    sun_first = bool(sun) and net_metering_over(today)
-    if sun_first:
-        title = f"Vandaag zon over: {hm(sun['start'])}–{hm(sun['end'])}"
-        lines.append(f"Beste moment voor vaatwasser of wasmachine: {hm(sun['start'])}–{hm(sun['end'])}. "
-                     f"Dan is er naar verwachting zo'n {kw(sun['surplus_w'])} zonnestroom over.")
-        if block:
-            lines.append(f"Moet het op een ander moment, dan is {hm(block['start'])}–{hm(block['end'])} "
-                         f"het goedkoopst ({cent(block['avg'])} per kWh).")
-    elif block:
-        title = f"Vandaag het goedkoopst: {hm(block['start'])}–{hm(block['end'])}"
+    if block:
+        if title == "Goedemorgen":
+            title = f"Vandaag het goedkoopst: {hm(block['start'])}–{hm(block['end'])}"
         rest = [r for r in rows if r["ts"] >= int(now.timestamp()) - QUARTER]
         hi = max(rest, key=lambda r: r["all_in"]) if rest else None
-        line = f"Beste moment voor vaatwasser of wasmachine: {hm(block['start'])}–{hm(block['end'])}, gemiddeld {cent(block['avg'])} per kWh."
+        line = f"Goedkoopste stroom: {hm(block['start'])}–{hm(block['end'])}, gemiddeld {cent(block['avg'])} per kWh."
         if hi:
             line += f" Duurst rond {hm(hi['ts'])} ({cent(hi['all_in'])})."
         lines.append(line)
-    if sun and not sun_first:
-        lines.append(f"Meeste zon: {hm(sun['start'])}–{hm(sun['end'])}, naar verwachting zo'n "
-                     f"{kw(sun['surplus_w'])} zonnestroom over.")
     if rows:
         neg = windows([r for r in rows if r["ts"] >= int(now.timestamp()) - QUARTER], lambda r: r["export"] < 0)
         for w in neg:
             lines.append(f"Tussen {hm(w['start'])} en {hm(w['end'])} is de prijs negatief: stroom gebruiken levert dan zelfs iets op.")
-
-    y = (today - timedelta(days=1)).isoformat()
-    t = _totals(y)
-    if (t.get("minutes") or 0) > 600:
-        parts = [f"{kwh(t['solar_wh'])} opgewekt"]
-        if t["self_sufficiency"] is not None:
-            parts.append(f"{t['self_sufficiency']:.0f}% zelf voorzien")
-        if t.get("priced_minutes"):
-            net = (t.get("cost_import") or 0) - (t.get("revenue_export") or 0)
-            parts.append(f"{eur(net)} aan stroom")
-        lines.append("Gisteren: " + ", ".join(parts) + ".")
 
     for a in db.open_alerts():
         name = a["name"] or a["serial"]
@@ -142,32 +156,69 @@ def build_morning(now: datetime, sun: dict[str, Any] | None = None) -> tuple[str
 # ---------------- avond ----------------
 
 
-def build_evening(day: date) -> tuple[str, str] | None:
-    """Dagrecord, (bijna) zelfvoorzienende dag of mijlpaal. Hooguit één bericht."""
+def _record(day: str, t: dict[str, Any]) -> str | None:
+    """Dagrecord, (bijna) zelfvoorzienende dag of mijlpaal, als één zin."""
     db = get_db()
-    d = day.isoformat()
-    t = _totals(d)
-    if (t.get("minutes") or 0) < 600:
-        return None
     hist = db.q(
-        "SELECT day, SUM(solar_wh) AS s FROM minute WHERE day < ? GROUP BY day HAVING COUNT(*) > 600", (d,)
+        "SELECT day, SUM(solar_wh) AS s FROM minute WHERE day < ? GROUP BY day HAVING COUNT(*) > 600", (day,)
     )
     solar = t.get("solar_wh") or 0.0
     if len(hist) >= 14 and solar > 500 and solar > max(h["s"] or 0 for h in hist):
-        return "☀ Nieuw record!", f"Vandaag {kwh(solar)} opgewekt: de beste dag sinds de meting begon."
-
-    if t["self_sufficiency"] is not None and t["self_sufficiency"] >= 95:
-        return "🏡 Bijna helemaal zelfvoorzienend", (
-            f"Vandaag kwam {t['self_sufficiency']:.0f}% van de stroom van eigen zon of batterij."
-        )
-
+        return f"☀ Nieuw record: de beste zonnedag sinds de meting begon."
     total = db.q("SELECT SUM(solar_wh) AS s FROM minute")[0]["s"] or 0.0
     before = total - solar
     step = 500_000  # elke 500 kWh
     if total >= step and int(before // step) < int(total // step):
-        mijl = int(total // step) * step
-        return "🎉 Mijlpaal", f"Sinds de meting begon, hebben de panelen samen {mijl / 1000:.0f} kWh opgewekt."
+        return f"🎉 Mijlpaal: de panelen hebben samen al {int(total // step) * step / 1000:.0f} kWh opgewekt."
     return None
+
+
+def build_evening(day: date) -> tuple[str, str] | None:
+    """Avondoverzicht van de dag tot nu: opwek, verbruik, eigen stroom, kosten, en een record als dat er is."""
+    d = day.isoformat()
+    t = _totals(d)
+    if (t.get("minutes") or 0) < 600:
+        return None
+    solar, house = t.get("solar_wh") or 0.0, t.get("house_wh") or 0.0
+    ss = t["self_sufficiency"]
+    own = "eigen zon en batterij" if (t.get("discharge_wh") or 0) > 50 else "eigen panelen"
+    lines: list[str] = []
+
+    line = f"Opgewekt: {kwh(solar)}"
+    expected = get_db().get_kv(f"solar_expected_{d}")
+    if expected:
+        line += f" (verwacht was {_num(float(expected))} kWh)"
+    lines.append(line + ".")
+    if ss is not None:
+        lines.append(f"Verbruikt: {kwh(house)}, waarvan {ss:.0f}% van {own}.")
+    else:
+        lines.append(f"Verbruikt: {kwh(house)}.")
+    parts = []
+    if (t.get("heatpump_wh") or 0) > 50:
+        parts.append(f"warmtepomp {kwh(t['heatpump_wh'])}")
+    if (t.get("aircon_wh") or 0) > 50:
+        parts.append(f"airco's ≈ {kwh(t['aircon_wh'])}")
+    if parts:
+        lines.append("Daarvan " + ", ".join(parts) + ".")
+    flows = []
+    if (t.get("export_wh") or 0) > 50:
+        flows.append(f"{kwh(t['export_wh'])} teruggeleverd")
+    flows.append(f"{kwh(t.get('import_wh') or 0)} van het net")
+    lines.append(flows[0][0].upper() + ", ".join(flows)[1:] + ".")
+    if t.get("priced_minutes"):
+        net = (t.get("cost_import") or 0) - (t.get("revenue_export") or 0)
+        lines.append(f"Stroom vandaag: {eur(net)}." if net >= 0 else f"Vandaag verdiend aan stroom: {eur(-net)}.")
+    rec = _record(d, t)
+    if rec:
+        lines.append(rec)
+
+    if ss is not None and ss >= 95:
+        title = "🏡 Vandaag bijna helemaal zelfvoorzienend"
+    elif ss is not None:
+        title = f"Vandaag {ss:.0f}% eigen stroom"
+    else:
+        title = f"Vandaag {kwh(house)} verbruikt"
+    return title, "\n".join(lines)
 
 
 # ---------------- week ----------------
@@ -264,7 +315,7 @@ async def run() -> None:
 
             if hhmm >= _hhmm(config.push_morning_time) and now.hour < 12:
                 async def morning() -> None:
-                    msg = build_morning(now, await solarforecast.sun_block(now))
+                    msg = build_morning(now, await solarforecast.day_outlook(now))
                     if msg:
                         await push.broadcast("morning", *msg, url="/#nu", tag="morning")
                 await _once(f"push_morning_{today}", morning)

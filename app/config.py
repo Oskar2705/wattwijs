@@ -131,7 +131,7 @@ class Config:
     push_enabled: bool = field(default_factory=lambda: _bool("PUSH_ENABLED", True))
     push_contact: str = field(default_factory=lambda: _str("PUSH_CONTACT"))
     push_morning_time: str = field(default_factory=lambda: _str("PUSH_MORNING_TIME", "07:30"))
-    push_evening_time: str = field(default_factory=lambda: _str("PUSH_EVENING_TIME", "20:30"))
+    push_evening_time: str = field(default_factory=lambda: _str("PUSH_EVENING_TIME", "21:00"))
     push_weekly_time: str = field(default_factory=lambda: _str("PUSH_WEEKLY_TIME", "19:00"))  # zondag
     push_block_hours: float = field(default_factory=lambda: _float("PUSH_BLOCK_HOURS", 2))
     push_block_window: str = field(default_factory=lambda: _str("PUSH_BLOCK_WINDOW", "07:00-23:00"))

@@ -543,7 +543,9 @@ async def push_test(request: Request) -> dict[str, Any]:
         from . import solarforecast
 
         now = datetime.now(config.tz)
-        msg = notifier.build_morning(now, await solarforecast.sun_block(now))
+        msg = notifier.build_morning(now, await solarforecast.day_outlook(now))
+    elif kind == "evening":
+        msg = notifier.build_evening(datetime.now(config.tz).date())
     elif kind == "export":
         from . import exportwatch
 

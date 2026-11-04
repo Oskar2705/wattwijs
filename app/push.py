@@ -29,11 +29,11 @@ from .db import get_db
 log = logging.getLogger(__name__)
 
 KINDS: list[dict[str, Any]] = [
-    {"key": "morning", "label": "Ochtendtip: goedkoopste moment voor de vaatwasser en wasmachine", "default": True},
+    {"key": "morning", "label": "Ochtendbericht: zonverwachting en het beste moment om stroom te gebruiken", "default": True},
     {"key": "panels", "label": "Zonnepaneel kapot of levert te weinig op", "default": True},
     {"key": "negative", "label": "Morgen een negatieve stroomprijs", "default": True},
     {"key": "export", "label": "Je levert stroom terug: goed moment om iets aan te zetten (vanaf 2027)", "default": True},
-    {"key": "records", "label": "Records en mijlpalen", "default": True},
+    {"key": "records", "label": "Avondoverzicht: opwek, verbruik en eigen stroom van vandaag", "default": True},
     {"key": "weekly", "label": "Weekoverzicht op zondagavond", "default": True},
     {"key": "tech", "label": "Technisch: apparaat geeft geen gegevens", "default": False},
 ]
