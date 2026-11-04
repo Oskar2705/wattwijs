@@ -1,4 +1,4 @@
-"""Wattwijs - webserver en achtergrondtaken."""
+"""Webserver en achtergrondtaken van de app."""
 
 from __future__ import annotations
 
@@ -6,11 +6,13 @@ import asyncio
 import base64
 import csv
 import io
+import json
 import logging
 import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import integrations, mailer, notifier, panels, prices, push, recorder
+from . import aircontimer, integrations, mailer, notifier, panels, prices, push, recorder
 from .config import config
 from .db import ENERGY_COLS, consumption_wh, get_db, month_days, self_sufficiency
 from .state import state
@@ -50,7 +52,7 @@ async def watchdog() -> None:
                 if key in notified:
                     notified.discard(key)
                     await push.broadcast("tech", f"{names[key]} is weer bereikbaar", "Er komen weer gegevens binnen.")
-                    await mailer.send(config.split(config.admin_to), f"Wattwijs: {names[key]} is weer bereikbaar",
+                    await mailer.send(config.split(config.admin_to), f"{config.app_name}: {names[key]} is weer bereikbaar",
                                       f"{names[key]} levert weer gegevens." + mailer.footer())
                 continue
             offline_since.setdefault(key, now)
@@ -60,7 +62,7 @@ async def watchdog() -> None:
                                      f"Al {config.offline_alert_minutes} minuten niets ontvangen. {src.last_error or ''}".strip())
                 await mailer.send(
                     config.split(config.admin_to),
-                    f"Wattwijs: {names[key]} geeft geen gegevens",
+                    f"{config.app_name}: {names[key]} geeft geen gegevens",
                     f"Al {config.offline_alert_minutes} minuten geen gegevens van {names[key]}.\n"
                     f"Laatste foutmelding: {src.last_error or 'onbekend'}" + mailer.footer(),
                 )
@@ -90,6 +92,8 @@ def start_tasks() -> list[asyncio.Task]:
             tasks.append(panels.run(integ.factory()))
         elif role == "prices":
             tasks.append(prices.run(integ.factory()))
+    if SELECTED.get("aircon"):
+        tasks.append(aircontimer.run())
     if config.push_enabled:
         tasks.append(notifier.run())
     return [asyncio.create_task(t) for t in tasks]
@@ -109,7 +113,13 @@ async def lifespan(app: FastAPI):
     recorder.recorder.flush()
 
 
-app = FastAPI(title="Wattwijs", lifespan=lifespan)
+app = FastAPI(title=config.app_name, lifespan=lifespan)
+
+
+def _realm() -> str:
+    """Naam voor het inlogvenster van de browser (alleen tekens die in een header mogen)."""
+    name = config.app_name.replace('"', "").encode("latin-1", "ignore").decode("latin-1")
+    return name or "Wattwijs"
 
 
 @app.middleware("http")
@@ -126,7 +136,7 @@ async def basic_auth(request: Request, call_next):
             except Exception:  # noqa: BLE001
                 ok = False
         if not ok:
-            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="Wattwijs"'})
+            return Response(status_code=401, headers={"WWW-Authenticate": f'Basic realm="{_realm()}"'})
     return await call_next(request)
 
 
@@ -197,28 +207,97 @@ def live() -> dict[str, Any]:
 
 
 @app.get("/api/aircon")
-def aircon_view() -> dict[str, Any]:
+async def aircon_view() -> dict[str, Any]:
     src = state.aircon
     return {
         "configured": src.configured,
         "control": bool(config.airco_control and src.control),
-        "units": src.values.get("units", []),
+        "units": aircontimer.with_timers(src.values.get("units", [])),
         "power_w": src.get("power_w"),
         "error": src.last_error,
     }
 
 
-@app.post("/api/aircon/{unit_id}")
-async def aircon_set(unit_id: str, request: Request) -> dict[str, Any]:
+def _aircon_controllable() -> Any:
     src = state.aircon
     if not src.configured or src.control is None:
         raise HTTPException(404, "Er zijn geen airco's om te bedienen.")
     if not config.airco_control:
         raise HTTPException(403, "Bedienen staat uit (AIRCO_CONTROL=0).")
+    return src
+
+
+async def _json_body(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
         raise HTTPException(400, "Ongeldig verzoek.") from None
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Ongeldig verzoek.")
+    return body
+
+
+def _off_at(body: dict[str, Any]) -> float:
+    try:
+        return aircontimer.resolve_off_at(body, time.time())
+    except ValueError as exc:
+        raise HTTPException(400, f"Kan niet: {exc}.") from None
+
+
+# Let op: deze twee routes staan vóór /api/aircon/{unit_id}, anders wordt "timer" als airco gezien.
+@app.post("/api/aircon/timer")
+async def aircon_timer_all(request: Request) -> dict[str, Any]:
+    """Timer voor alle airco's die nu aan staan."""
+    src = _aircon_controllable()
+    off_at = _off_at(await _json_body(request))
+    ids = [u["id"] for u in src.values.get("units", []) if u.get("online") and u.get("on")]
+    if not ids:
+        raise HTTPException(409, "Er staat geen airco aan.")
+    now = time.time()
+    for uid in ids:
+        aircontimer.timers.set(uid, off_at, now)
+    log.info("Airco-timer voor %s: uit om %s", ", ".join(ids), datetime.fromtimestamp(off_at, config.tz).strftime("%H:%M"))
+    return {"off_at": off_at, "units": ids}
+
+
+@app.delete("/api/aircon/timer")
+async def aircon_timer_all_cancel() -> dict[str, Any]:
+    _aircon_controllable()
+    n = aircontimer.timers.clear_all()
+    if n:
+        log.info("Alle airco-timers gestopt (%d)", n)
+    return {"cleared": n}
+
+
+@app.post("/api/aircon/{unit_id}/timer")
+async def aircon_timer_set(unit_id: str, request: Request) -> dict[str, Any]:
+    src = _aircon_controllable()
+    off_at = _off_at(await _json_body(request))
+    unit = next((u for u in src.values.get("units", []) if u.get("id") == unit_id), None)
+    if unit is None:
+        raise HTTPException(404, "Deze airco bestaat niet.")
+    if not unit.get("on"):
+        raise HTTPException(409, "Deze airco staat uit; zet hem eerst aan.")
+    aircontimer.timers.set(unit_id, off_at)
+    log.info("Airco %s: timer, uit om %s", unit_id, datetime.fromtimestamp(off_at, config.tz).strftime("%H:%M"))
+    return {**unit, "off_at": off_at}
+
+
+@app.delete("/api/aircon/{unit_id}/timer")
+async def aircon_timer_cancel(unit_id: str) -> dict[str, Any]:
+    src = _aircon_controllable()
+    aircontimer.timers.clear(unit_id)
+    unit = next((u for u in src.values.get("units", []) if u.get("id") == unit_id), None)
+    if unit is None:
+        raise HTTPException(404, "Deze airco bestaat niet.")
+    log.info("Airco %s: timer gestopt", unit_id)
+    return {**unit, "off_at": None}
+
+
+@app.post("/api/aircon/{unit_id}")
+async def aircon_set(unit_id: str, request: Request) -> dict[str, Any]:
+    src = _aircon_controllable()
+    body = await _json_body(request)
     changes = {k: body.get(k) for k in ("on", "mode", "target", "fan", "air") if body.get(k) is not None}
     log.info("Airco %s: %s", unit_id, changes)
     try:
@@ -235,7 +314,9 @@ async def aircon_set(unit_id: str, request: Request) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         log.warning("Airco %s bedienen mislukt: %s", unit_id, exc)
         raise HTTPException(502, f"De airco nam de opdracht niet aan: {exc}") from None
-    return unit
+    if not unit.get("on"):
+        aircontimer.timers.clear(unit_id)  # met de hand uitgezet: de timer is niet meer nodig
+    return {**unit, "off_at": aircontimer.timers.off_at(unit_id)}
 
 
 # ---------------- verwarming (tado) ----------------
@@ -466,7 +547,7 @@ async def push_test(request: Request) -> dict[str, Any]:
         msg = exportwatch.build_message(-1400, 12, now_price, bool(SELECTED.get("battery")), True,
                                         config.push_heat_back_time)
         msg = (msg[0] + " (voorbeeld)", msg[1])
-    title, text = msg or ("👋 Het werkt!", "Je krijgt voortaan meldingen van Wattwijs op deze telefoon.")
+    title, text = msg or ("👋 Het werkt!", f"Je krijgt voortaan meldingen van {config.app_name} op deze telefoon.")
     ok, detail = await push.send_to(endpoint, title, text, url="/#nu", tag="test")
     if not ok:
         raise HTTPException(502, f"versturen mislukt: {detail}")
@@ -516,9 +597,20 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 @app.get("/sw.js")
-def service_worker() -> FileResponse:
-    return FileResponse(STATIC / "sw.js", media_type="text/javascript",
-                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+def service_worker() -> Response:
+    js = (STATIC / "sw.js").read_text(encoding="utf-8").replace('"Wattwijs"', json.dumps(config.app_name))
+    return Response(js, media_type="text/javascript",
+                    headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
+@app.get("/manifest.webmanifest")
+def manifest() -> Response:
+    """Het manifest met de naam uit APP_NAME / APP_SHORT_NAME (bepaalt de naam onder het icoon)."""
+    data = json.loads((STATIC / "manifest.webmanifest").read_text(encoding="utf-8"))
+    data["name"] = config.app_name
+    data["short_name"] = config.app_short_name or config.app_name
+    return Response(json.dumps(data, ensure_ascii=False, indent=2), media_type="application/manifest+json",
+                    headers={"Cache-Control": "no-cache"})
 
 
 def _asset_version() -> str:
@@ -547,4 +639,5 @@ def index() -> Response:
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = html.replace("/static/style.css", f"/static/style.css?v={ASSET_VERSION}")
     html = html.replace("/static/app.js", f"/static/app.js?v={ASSET_VERSION}")
+    html = html.replace("Wattwijs", html_escape(config.app_name))
     return Response(html, media_type="text/html", headers={"Cache-Control": "no-cache"})

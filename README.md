@@ -19,7 +19,7 @@ It was built for one Dutch household with a heat pump, a home battery, solar pan
 - **Per-panel check for solar panels.** Every evening each panel is compared with its neighbours in the same row. When one keeps falling behind or dies, you get an email and a push notification. The app learns fixed shading by itself, so it doesn't send false alarms. The roof is drawn the way the SolarEdge portal draws it.
 - **Dynamic prices** (15-minute resolution) with costs and revenue in euros, the cheapest 2-hour block of the day, and warnings for negative prices.
 - **Installable web app with push notifications**, including on iPhone: a morning tip with the cheapest time to run the dishwasher, panel alerts, daily records and a weekly summary.
-- **Climate tab**: set the temperature per room on tado° X, and switch air conditioners on or off with mode, temperature, air direction and fan speed. Air conditioner usage is estimated per unit.
+- **Climate tab**: set the temperature per room on tado° X, and switch air conditioners on or off with mode, temperature, air direction and fan speed, and set an off timer per unit or for all of them. Air conditioner usage is estimated per unit.
 - **Read-only by default.** The app never changes a setting on any device, except the air conditioners and the tado° heating when someone uses the Klimaat tab (`AIRCO_CONTROL=0` makes the air conditioners read-only).
 - **Demo mode** with simulated data, so you can try it without any hardware.
 
@@ -95,6 +95,7 @@ The app has to reach the battery, the P1 dongle and (optionally) the inverter **
 4. The units don't report power in watts. The app estimates it per unit from whether the compressor runs and from the unit's energy counter, which counts in steps of 0.25 kWh. Treat it as an indication; for exact figures put a kWh meter on the air conditioning group.
 5. The wifi module has no ECO setting; ECO set on the remote is probably cancelled by a command from the app.
 6. After a command, the unit gives the app a 60-second lock, so the Smart M-Air app can't change that unit for a minute. Set `AIRCO_CONTROL=0` if you only want to read.
+7. Each unit that is on has a **timer** button: pick 30 minutes to 3 hours or a clock time, and the app switches the unit off then. With two or more units on, one button sets the same timer for all of them. Timers run on the server, so they work with the phone closed and survive a restart; switching a unit off another way cancels its timer.
 
 **tado° X** (`TADO_ENABLED=1`)
 

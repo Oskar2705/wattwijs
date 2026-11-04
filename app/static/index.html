@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#EDF1EE">
   <title>Wattwijs</title>
-  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" href="/static/icons/favicon-32.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -222,8 +222,9 @@
           <p class="hint" id="acSummary"></p>
         </div>
         <p class="ac-error" id="acError" hidden></p>
+        <div class="ac-all" id="acAll" hidden></div>
         <div class="ac-units" id="acUnits"></div>
-        <p class="hint ac-note" id="acNote">Het verbruik is een schatting: de airco's geven zelf alleen door hoeveel ze per run verbruiken, in stappen van 0,25 kWh. Na een opdracht kan de Smart M-Air-app de airco een minuut lang niet bedienen. De ECO-stand van de afstandsbediening kan via wifi niet worden ingesteld; een opdracht vanuit deze app zet ECO waarschijnlijk uit.</p>
+        <p class="hint ac-note" id="acNote">Het verbruik is een schatting: de airco's geven zelf alleen door hoeveel ze per run verbruiken, in stappen van 0,25 kWh. Na een opdracht kan de Smart M-Air-app de airco een minuut lang niet bedienen. De ECO-stand van de afstandsbediening kan via wifi niet worden ingesteld; een opdracht vanuit deze app zet ECO waarschijnlijk uit. Een timer loopt op de server, dus de airco gaat ook uit als je telefoon dicht is; zet je de airco eerder uit, dan vervalt de timer.</p>
       </div>
     </section>
     <!-- ============ MELDINGEN ============ -->

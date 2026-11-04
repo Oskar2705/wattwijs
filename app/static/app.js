@@ -29,6 +29,8 @@ const dayWord = (ts) => {
 };
 const pct = (v) => (v == null ? "–" : `${nl0.format(v)}%`);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+// De server vult de naam uit APP_NAME in de pagina in.
+const APP_NAME = ($('meta[name="apple-mobile-web-app-title"]') || {}).content || document.title;
 
 const COLORS = { sun: "var(--sun)", grid: "var(--grid)", batt: "var(--batt)", house: "var(--house)", hp: "var(--hp)", ac: "var(--ac)" };
 
@@ -238,7 +240,7 @@ function renderLive(d) {
   live = d;
   const n = d.now;
   $("#siteName").textContent = d.site_name && d.site_name !== "Thuis" ? d.site_name : "";
-  document.title = $("#siteName").textContent ? `Wattwijs ${$("#siteName").textContent}` : "Wattwijs";
+  document.title = $("#siteName").textContent ? `${APP_NAME} ${$("#siteName").textContent}` : APP_NAME;
   $("#demoNote").hidden = !d.demo;
 
   const anyOnline = Object.values(d.sources).some((s) => s.configured && s.online);
@@ -398,7 +400,7 @@ async function pollLive() {
     renderLive(await getJSON("/api/live"));
   } catch (e) {
     $("#pulse").className = "pulse stale";
-    $("#pulseText").textContent = "Geen verbinding met Wattwijs";
+    $("#pulseText").textContent = `Geen verbinding met ${APP_NAME}`;
   }
 }
 
@@ -901,6 +903,8 @@ function b64ToBytes(s) {
 
 const postJSON = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
   .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || r.status); return d; });
+const sendJSON = (url, method) => fetch(url, { method })
+  .then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || r.status); return d; });
 
 function pushMsg(text, err = false) {
   const m = $("#pushMsg");
@@ -916,11 +920,11 @@ async function renderPush() {
   }
   if (isIOS && !isStandalone()) {
     box.innerHTML = `<h3>Eerst de app op je beginscherm zetten</h3>
-      <p>Op een iPhone kunnen meldingen alleen binnenkomen als Wattwijs als app op het beginscherm staat.</p>
+      <p>Op een iPhone kunnen meldingen alleen binnenkomen als ${esc(APP_NAME)} als app op het beginscherm staat.</p>
       <ol>
         <li>Tik in Safari op de <strong>drie puntjes (•••)</strong> naast de adresbalk en kies <strong>Deel</strong>. Op een oudere iPhone tik je direct op de deelknop (het vierkantje met het pijltje omhoog).</li>
         <li>Scroll omlaag en kies <strong>Zet op beginscherm</strong>. Laat <strong>Open als webapp</strong> aan staan en tik op <strong>Voeg toe</strong>.</li>
-        <li>Open Wattwijs via het nieuwe icoon en kom terug naar dit scherm (het belletje rechtsboven).</li>
+        <li>Open ${esc(APP_NAME)} via het nieuwe icoon en kom terug naar dit scherm (het belletje rechtsboven).</li>
       </ol>
       <p>Zie je "Zet op beginscherm" niet? Scroll in het deelmenu helemaal naar beneden, tik op <strong>Wijzig taken</strong> en voeg het toe. Gebruik Safari zelf, niet de ingebouwde browser van WhatsApp of Mail.</p>`;
     return;
@@ -991,7 +995,9 @@ async function renderPush() {
 }
 
 /* ================= airco ================= */
-const ac = { data: null, busy: new Set(), msg: {} };
+const ac = { data: null, busy: new Set(), msg: {}, timerOpen: null, timerTime: {}, allMsg: null };
+const AC_TIMER_QUICK = [[30, "30 min"], [60, "1 uur"], [90, "1½ uur"], [120, "2 uur"], [180, "3 uur"]];
+const CLOCK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>`;
 const AC_MODES = [["auto", "Auto"], ["cool", "Koelen"], ["heat", "Verwarmen"], ["dry", "Drogen"], ["fan", "Ventileren"]];
 const AC_FANS = [["auto", "Auto"], ["quiet", "Stil"], ["low", "Laag"], ["medium", "Midden"], ["high", "Hoog"]];
 const AC_AIRS = [["3d", "3D-auto"], ["swing", "Op en neer"], ["up", "Omhoog"], ["mid", "Midden"], ["down", "Omlaag"]];
@@ -1056,8 +1062,141 @@ function acCard(u, canControl) {
         ${AC_FANS.map(([k, l]) => `<button data-act="fan" data-fan="${k}" aria-pressed="${u.fan === k}" ${dis}>${l}</button>`).join("")}
       </div>
     </div>
+    ${acTimerRow(u, canControl, busy)}
     <p class="ac-msg${msg && msg.err ? " err" : ""}">${busy ? "Bezig, de airco krijgt de opdracht…" : msg ? esc(msg.text) : ""}</p>
   </div>`;
+}
+
+/* ---- uit-timers ---- */
+function fmtLeft(sec) {
+  const m = Math.max(1, Math.round(sec / 60));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} u ${r} min` : `${h} uur`;
+}
+function timerWhen(offAt) {
+  const left = offAt - Date.now() / 1000;
+  const day = localDate(new Date(offAt * 1000)) === localDate() ? "" : " morgen";
+  return `<strong>${clock(offAt)}</strong>${day} <span>(nog ${fmtLeft(left)})</span>`;
+}
+function defaultTimerTime() {
+  const d = new Date(Date.now() + 2 * 3600 * 1000);
+  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+  return d.toTimeString().slice(0, 5);
+}
+function timerPicker(scope, dis) {
+  const val = ac.timerTime[scope] || defaultTimerTime();
+  return `<div class="ac-picker" data-scope="${esc(scope)}">
+    <span class="ac-lbl">${scope === "all" ? "Alle airco's die aan staan uitzetten over" : "Uitzetten over"}</span>
+    <div class="ac-modes" role="group" aria-label="Uitzetten over">
+      ${AC_TIMER_QUICK.map(([m, l]) => `<button data-act="timer-min" data-min="${m}" ${dis}>${l}</button>`).join("")}
+    </div>
+    <div class="ac-at">
+      <label>of om <input type="time" data-act="timer-time" value="${esc(val)}" ${dis}></label>
+      <button class="btn" data-act="timer-at" ${dis}>Instellen</button>
+      <button class="linkbtn" data-act="timer-close">Annuleren</button>
+    </div>
+  </div>`;
+}
+function acTimerRow(u, canControl, busy) {
+  if (!canControl) return u.off_at ? `<p class="ac-timer-on">${CLOCK_SVG}<span>Gaat uit om ${timerWhen(u.off_at)}</span></p>` : "";
+  const dis = busy || !u.online ? "disabled" : "";
+  if (u.off_at) {
+    return `<div class="ac-timer-on">${CLOCK_SVG}<span>Gaat uit om ${timerWhen(u.off_at)}</span>
+      <button class="linkbtn" data-act="timer-stop" ${dis}>Timer stoppen</button></div>`;
+  }
+  if (!u.on) return "";
+  if (ac.timerOpen === u.id) return timerPicker(u.id, dis);
+  return `<button class="ac-timer-btn" data-act="timer-open" ${dis}>${CLOCK_SVG}Timer: na een tijd uitzetten</button>`;
+}
+function renderAcAll(d, units) {
+  const box = $("#acAll");
+  const on = units.filter((u) => u.online && u.on);
+  const timed = units.filter((u) => u.off_at);
+  if (!d.control || (on.length < 2 && !timed.length && ac.timerOpen !== "all")) {
+    box.hidden = true;
+    if (ac.timerOpen === "all") ac.timerOpen = null;
+    return;
+  }
+  box.hidden = false;
+  const msg = ac.allMsg;
+  const busy = ac.busy.has("all");
+  const dis = busy ? "disabled" : "";
+  let html = "";
+  if (ac.timerOpen === "all") html += timerPicker("all", dis);
+  else {
+    html += `<div class="ac-all-row">`;
+    if (on.length >= 2) html += `<button class="ac-timer-btn" data-act="timer-open" ${dis}>${CLOCK_SVG}Alle airco's na een tijd uitzetten</button>`;
+    if (timed.length >= 2) html += `<button class="linkbtn" data-act="timer-stop-all" ${dis}>Alle ${timed.length} timers stoppen</button>`;
+    html += `</div>`;
+  }
+  html += `<p class="ac-msg${msg && msg.err ? " err" : ""}">${busy ? "Bezig…" : msg ? esc(msg.text) : ""}</p>`;
+  box.innerHTML = html;
+}
+function timerAt(scope) {
+  const v = ac.timerTime[scope] || defaultTimerTime();
+  const [h, m] = v.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  if (d.getTime() <= Date.now() + 30000) d.setDate(d.getDate() + 1);  // al voorbij: morgen
+  return Math.round(d.getTime() / 1000);
+}
+async function acTimer(scope, body) {
+  const all = scope === "all";
+  ac.busy.add(scope);
+  if (all) ac.allMsg = null; else ac.msg[scope] = null;
+  renderAircon();
+  try {
+    if (all) {
+      const r = await postJSON("/api/aircon/timer", body);
+      for (const u of ac.data.units) if (r.units.includes(u.id)) u.off_at = r.off_at;
+      ac.allMsg = { text: `${r.units.length === 1 ? "De airco gaat" : `${r.units.length} airco's gaan`} uit om ${clock(r.off_at)}.` };
+    } else {
+      const unit = await postJSON(`/api/aircon/${encodeURIComponent(scope)}/timer`, body);
+      const i = ac.data.units.findIndex((u) => u.id === scope);
+      if (i >= 0) ac.data.units[i] = unit;
+      ac.msg[scope] = { text: "Timer ingesteld." };
+    }
+    ac.timerOpen = null;
+  } catch (e) {
+    const m = { text: `Lukte niet: ${e.message || e}`, err: true };
+    if (all) ac.allMsg = m; else ac.msg[scope] = m;
+  } finally {
+    ac.busy.delete(scope);
+    renderAircon();
+  }
+}
+async function acTimerStop(scope) {
+  const all = scope === "all";
+  ac.busy.add(scope);
+  renderAircon();
+  try {
+    await sendJSON(all ? "/api/aircon/timer" : `/api/aircon/${encodeURIComponent(scope)}/timer`, "DELETE");
+    for (const u of ac.data.units) if (all || u.id === scope) u.off_at = null;
+    const m = { text: all ? "Alle timers zijn gestopt." : "Timer gestopt; de airco blijft aan." };
+    if (all) ac.allMsg = m; else ac.msg[scope] = m;
+  } catch (e) {
+    const m = { text: `Lukte niet: ${e.message || e}`, err: true };
+    if (all) ac.allMsg = m; else ac.msg[scope] = m;
+  } finally {
+    ac.busy.delete(scope);
+    renderAircon();
+  }
+}
+function onTimerClick(b, scope) {
+  const act = b.dataset.act;
+  if (act === "timer-open") { ac.timerOpen = scope; renderAircon(); }
+  else if (act === "timer-close") { ac.timerOpen = null; renderAircon(); }
+  else if (act === "timer-min") acTimer(scope, { minutes: Number(b.dataset.min) });
+  else if (act === "timer-at") {
+    const at = timerAt(scope);
+    if (at) acTimer(scope, { at });
+  }
+  else if (act === "timer-stop") acTimerStop(scope);
+  else if (act === "timer-stop-all") acTimerStop("all");
+  else return false;
+  return true;
 }
 
 function renderAircon() {
@@ -1072,6 +1211,7 @@ function renderAircon() {
     ? `${on ? `${on} van de ${units.length} aan` : "Alle airco's uit"}${on ? `, samen ongeveer ${fmtW(total)}` : ""}`
     : "Verbinden met de airco's…";
   $("#acUnits").innerHTML = units.map((u) => acCard(u, d.control)).join("");
+  renderAcAll(d, units);
 }
 
 async function acCommand(id, changes, okText) {
@@ -1113,6 +1253,7 @@ function initAircon() {
     const id = b.closest(".ac-card").dataset.id;
     const u = ac.data.units.find((x) => x.id === id);
     if (!u) return;
+    if (onTimerClick(b, id)) return;
     if (b.dataset.act === "up") acNudge(u, 0.5);
     else if (b.dataset.act === "down") acNudge(u, -0.5);
     else if (b.dataset.act === "air") {
@@ -1127,6 +1268,15 @@ function initAircon() {
       const label = AC_MODES.find(([k]) => k === b.dataset.mode)[1].toLowerCase();
       acCommand(id, { mode: b.dataset.mode }, () => `Staat aan op ${label}.`);
     }
+  });
+  $("#acAll").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-act]");
+    if (b && !b.disabled) onTimerClick(b, "all");
+  });
+  // Onthoud de ingevulde tijd, ook als de kaart opnieuw wordt getekend.
+  $("#view-klimaat").addEventListener("input", (e) => {
+    const inp = e.target.closest("input[data-act=timer-time]");
+    if (inp) ac.timerTime[inp.closest(".ac-picker").dataset.scope] = inp.value;
   });
   $("#acUnits").addEventListener("change", (e) => {
     const inp = e.target.closest("input[data-act=power]");
@@ -1337,5 +1487,5 @@ setInterval(() => {
   if (!pan.day || pan.day === last) loadPanels().catch(() => {});
 }, 60000);
 // Airco-tab open: elke 10 seconden de toestand ophalen (de server vraagt de airco's zelf elke minuut uit)
-setInterval(() => { if (!document.hidden && !$("#view-klimaat").hidden && !ac.busy.size && !heat.busy.size) loadClimate(); }, 10000);
+setInterval(() => { if (!document.hidden && !$("#view-klimaat").hidden && !ac.busy.size && !heat.busy.size && !ac.timerOpen) loadClimate(); }, 10000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) pollLive(); });

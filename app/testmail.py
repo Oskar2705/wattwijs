@@ -10,7 +10,7 @@ async def main() -> None:
     to = config.split(config.alert_to) + config.split(config.admin_to)
     status = await mailer.send(
         sorted(set(to)),
-        "Testmail van Wattwijs",
+        f"Testmail van {config.app_name}",
         "Als je dit leest, werken de meldingen per mail." + mailer.footer(),
     )
     print(f"Resultaat: {status}")

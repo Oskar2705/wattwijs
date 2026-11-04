@@ -19,7 +19,7 @@ Hij is gemaakt voor een Nederlands huishouden met een warmtepomp, een thuisbatte
 - **Controle per zonnepaneel.** Elke avond wordt elk paneel vergeleken met de panelen naast hem in dezelfde rij. Blijft er een achter of valt er een uit, dan krijg je een mail en een pushmelding. Vaste schaduw leert de app vanzelf, dus die geeft geen valse meldingen. Het dak wordt getekend zoals in het SolarEdge-portaal.
 - **Dynamische prijzen** per kwartier, met kosten en opbrengst in euro's, het goedkoopste blok van 2 uur en waarschuwingen voor negatieve prijzen.
 - **Installeerbare webapp met pushmeldingen**, ook op de iPhone: een ochtendtip met het goedkoopste moment voor de vaatwasser, paneelmeldingen, records en een weekoverzicht.
-- **Tabblad Klimaat**: de temperatuur per kamer instellen op tado° X, en airco's aan- en uitzetten met stand, temperatuur, luchtstroom en ventilator. Het verbruik van de airco's wordt per unit geschat.
+- **Tabblad Klimaat**: de temperatuur per kamer instellen op tado° X, en airco's aan- en uitzetten met stand, temperatuur, luchtstroom en ventilator, met een uit-timer per airco of voor allemaal. Het verbruik van de airco's wordt per unit geschat.
 - **Standaard alleen lezen.** De app verandert nooit een instelling op een apparaat, behalve de airco's en de tado-verwarming als iemand het tabblad Klimaat gebruikt (de airco's zet je op alleen lezen met `AIRCO_CONTROL=0`).
 - **Demomodus** met nepgegevens, om het zonder apparaten te proberen.
 
@@ -93,6 +93,7 @@ De app moet de batterij, de P1-dongle en eventueel de omvormer **op het lokale n
 4. De units geven geen vermogen in watt door. De app schat het per unit uit of de compressor draait en uit de energieteller van de unit, die telt in stappen van 0,25 kWh. Zie het als een indicatie; voor exacte cijfers zet je een kWh-meter op de airco-groep.
 5. De wifi-module kent geen ECO-stand; ECO van de afstandsbediening gaat waarschijnlijk uit na een opdracht uit de app.
 6. Na een opdracht houdt de unit de app 60 seconden vast, dus de Smart M-Air-app kan die unit dan een minuut niet bedienen. Wil je alleen uitlezen, zet dan `AIRCO_CONTROL=0`.
+7. Elke airco die aan staat heeft een **timer**: kies 30 minuten tot 3 uur of een kloktijd, en de app zet de unit dan uit. Staan er twee of meer aan, dan zet één knop dezelfde timer voor allemaal. De timers lopen op de server, dus ze werken ook als de telefoon dicht is en overleven een herstart; zet je een unit op een andere manier uit, dan vervalt de timer.
 
 **tado° X** (`TADO_ENABLED=1`)
 

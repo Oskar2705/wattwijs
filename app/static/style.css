@@ -404,3 +404,35 @@ a.btn { display: inline-block; text-decoration: none; }
 .tabs .sm { display: none; }
 @media (max-width: 520px) { .tabs.five .lg { display: none; } .tabs.five .sm { display: inline; } }
 .btn.comfort.stop { background: var(--surface); color: var(--ink); border: 2px solid #9E3369; }
+
+/* ================= airco-timers ================= */
+.ac-timer-btn {
+  display: flex; align-items: center; gap: .5rem; width: 100%; padding: .6rem .9rem; border-radius: 12px;
+  border: 1px dashed var(--rule); background: transparent; color: var(--ink-2); font: inherit; font-weight: 700;
+  font-size: .9rem; cursor: pointer; text-align: left;
+}
+.ac-timer-btn:hover:not(:disabled) { border-style: solid; color: var(--ink); }
+.ac-timer-btn svg, .ac-timer-on svg { width: 1.15rem; height: 1.15rem; flex: none; }
+.ac-timer-on {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; margin: 0; padding: .6rem .9rem;
+  border-radius: 12px; background: color-mix(in srgb, var(--ac) 14%, var(--surface)); color: var(--ink); font-size: .92rem;
+}
+.ac-timer-on svg { color: var(--ac); }
+.ac-timer-on > span { flex: 1; min-width: 10rem; }
+.ac-timer-on span span { color: var(--ink-2); white-space: nowrap; }
+.ac-picker {
+  display: grid; gap: .55rem; padding: .8rem .9rem; border-radius: 12px; border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+.ac-at { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; }
+.ac-at label { display: flex; align-items: center; gap: .45rem; font-size: .9rem; color: var(--ink-2); }
+.ac-at input[type="time"] {
+  font: inherit; font-size: 1rem; font-variant-numeric: tabular-nums; padding: .35rem .5rem;
+  border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); color: var(--ink);
+}
+.ac-at .btn { padding: .45rem 1rem; }
+.ac-all { margin: .2rem 0 1rem; display: grid; gap: .4rem; max-width: 640px; }
+.ac-all[hidden] { display: none; }
+.ac-all-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.2rem; }
+.ac-all-row .ac-timer-btn { width: auto; }
+.ac-all .ac-msg:empty { display: none; }
