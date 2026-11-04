@@ -213,6 +213,7 @@ async def aircon_view() -> dict[str, Any]:
         "configured": src.configured,
         "control": bool(config.airco_control and src.control),
         "units": aircontimer.with_timers(src.values.get("units", [])),
+        "timer_minutes": config.airco_timer_minutes,
         "power_w": src.get("power_w"),
         "error": src.last_error,
     }

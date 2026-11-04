@@ -996,7 +996,14 @@ async function renderPush() {
 
 /* ================= airco ================= */
 const ac = { data: null, busy: new Set(), msg: {}, timerOpen: null, timerTime: {}, allMsg: null };
-const AC_TIMER_QUICK = [[30, "30 min"], [60, "1 uur"], [90, "1½ uur"], [120, "2 uur"], [180, "3 uur"]];
+// "90" -> "1½ uur", "45" -> "45 min", "150" -> "2 u 30 min"
+function timerLabel(m) {
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  if (!r) return `${h} uur`;
+  if (r === 30) return `${h}½ uur`;
+  return `${h} u ${r} min`;
+}
 const CLOCK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg>`;
 const AC_MODES = [["auto", "Auto"], ["cool", "Koelen"], ["heat", "Verwarmen"], ["dry", "Drogen"], ["fan", "Ventileren"]];
 const AC_FANS = [["auto", "Auto"], ["quiet", "Stil"], ["low", "Laag"], ["medium", "Midden"], ["high", "Hoog"]];
@@ -1089,7 +1096,7 @@ function timerPicker(scope, dis) {
   return `<div class="ac-picker" data-scope="${esc(scope)}">
     <span class="ac-lbl">${scope === "all" ? "Alle airco's die aan staan uitzetten over" : "Uitzetten over"}</span>
     <div class="ac-modes" role="group" aria-label="Uitzetten over">
-      ${AC_TIMER_QUICK.map(([m, l]) => `<button data-act="timer-min" data-min="${m}" ${dis}>${l}</button>`).join("")}
+      ${((ac.data && ac.data.timer_minutes) || [30, 60, 90, 120, 180]).map((m) => `<button data-act="timer-min" data-min="${m}" ${dis}>${timerLabel(m)}</button>`).join("")}
     </div>
     <div class="ac-at">
       <label>of om <input type="time" data-act="timer-time" value="${esc(val)}" ${dis}></label>

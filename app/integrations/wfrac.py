@@ -320,7 +320,8 @@ async def _poll(u: Unit) -> None:
 
 
 @register("aircon", "wfrac", "Mitsubishi Heavy (WF-RAC / Smart M-Air)",
-          env=("AIRCO_UNITS", "AIRCO_CONTROL", "AIRCO_POLL_SECONDS", "AIRCO_DEFAULT_W"),
+          env=("AIRCO_UNITS", "AIRCO_CONTROL", "AIRCO_POLL_SECONDS", "AIRCO_DEFAULT_W",
+               "AIRCO_TIMER_MINUTES"),
           description="Lokaal via poort 51443. Uitlezen en (optioneel) aan/uit, stand en temperatuur.")
 async def run(src: Source) -> None:
     from pywfrac import Repository, WfRacError

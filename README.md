@@ -95,7 +95,7 @@ The app has to reach the battery, the P1 dongle and (optionally) the inverter **
 4. The units don't report power in watts. The app estimates it per unit from whether the compressor runs and from the unit's energy counter, which counts in steps of 0.25 kWh. Treat it as an indication; for exact figures put a kWh meter on the air conditioning group.
 5. The wifi module has no ECO setting; ECO set on the remote is probably cancelled by a command from the app.
 6. After a command, the unit gives the app a 60-second lock, so the Smart M-Air app can't change that unit for a minute. Set `AIRCO_CONTROL=0` if you only want to read.
-7. Each unit that is on has a **timer** button: pick 30 minutes to 3 hours or a clock time, and the app switches the unit off then. With two or more units on, one button sets the same timer for all of them. Timers run on the server, so they work with the phone closed and survive a restart; switching a unit off another way cancels its timer.
+7. Each unit that is on has a **timer** button: pick a duration (30 minutes to 3 hours by default; change the choices with `AIRCO_TIMER_MINUTES=15,30,60`) or a clock time, and the app switches the unit off then. With two or more units on, one button sets the same timer for all of them. Timers run on the server, so they work with the phone closed and survive a restart; switching a unit off another way cancels its timer.
 
 **tado° X** (`TADO_ENABLED=1`)
 

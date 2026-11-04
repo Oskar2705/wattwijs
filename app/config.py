@@ -28,6 +28,19 @@ def _str(name: str, default: str = "") -> str:
     return (os.getenv(name) or default).strip()
 
 
+DEFAULT_TIMER_MINUTES = [30, 60, 90, 120, 180]
+
+
+def parse_minutes(spec: str) -> list[int]:
+    """"15,30,60" -> [15, 30, 60]: oplopend, zonder dubbele, tussen 1 minuut en 24 uur, hooguit 8."""
+    out: set[int] = set()
+    for part in (spec or "").replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit() and 1 <= int(part) <= 24 * 60:
+            out.add(int(part))
+    return sorted(out)[:8] or list(DEFAULT_TIMER_MINUTES)
+
+
 @dataclass
 class Config:
     # Algemeen
@@ -82,6 +95,8 @@ class Config:
     airco_poll_s: float = field(default_factory=lambda: max(30.0, _float("AIRCO_POLL_SECONDS", 60)))
     # Geschat vermogen van een draaiende compressor tot de unit zelf een meting heeft gegeven
     airco_default_w: float = field(default_factory=lambda: _float("AIRCO_DEFAULT_W", 500))
+    # Keuzes onder de timerknop, in minuten
+    airco_timer_minutes: list[int] = field(default_factory=lambda: parse_minutes(_str("AIRCO_TIMER_MINUTES")))
     dw_poll_s: float = field(default_factory=lambda: _float("DEWARMTE_POLL_SECONDS", 60))
 
     # Paneelcontrole

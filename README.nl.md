@@ -93,7 +93,7 @@ De app moet de batterij, de P1-dongle en eventueel de omvormer **op het lokale n
 4. De units geven geen vermogen in watt door. De app schat het per unit uit of de compressor draait en uit de energieteller van de unit, die telt in stappen van 0,25 kWh. Zie het als een indicatie; voor exacte cijfers zet je een kWh-meter op de airco-groep.
 5. De wifi-module kent geen ECO-stand; ECO van de afstandsbediening gaat waarschijnlijk uit na een opdracht uit de app.
 6. Na een opdracht houdt de unit de app 60 seconden vast, dus de Smart M-Air-app kan die unit dan een minuut niet bedienen. Wil je alleen uitlezen, zet dan `AIRCO_CONTROL=0`.
-7. Elke airco die aan staat heeft een **timer**: kies 30 minuten tot 3 uur of een kloktijd, en de app zet de unit dan uit. Staan er twee of meer aan, dan zet één knop dezelfde timer voor allemaal. De timers lopen op de server, dus ze werken ook als de telefoon dicht is en overleven een herstart; zet je een unit op een andere manier uit, dan vervalt de timer.
+7. Elke airco die aan staat heeft een **timer**: kies een duur (standaard 30 minuten tot 3 uur; andere keuzes met `AIRCO_TIMER_MINUTES=15,30,60`) of een kloktijd, en de app zet de unit dan uit. Staan er twee of meer aan, dan zet één knop dezelfde timer voor allemaal. De timers lopen op de server, dus ze werken ook als de telefoon dicht is en overleven een herstart; zet je een unit op een andere manier uit, dan vervalt de timer.
 
 **tado° X** (`TADO_ENABLED=1`)
 

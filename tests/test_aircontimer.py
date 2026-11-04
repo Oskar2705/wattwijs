@@ -89,3 +89,12 @@ def test_check_keeps_timers_until_status_known(fake_aircon, monkeypatch):
     T.timers.set("a", 1000.0, now=0)
     asyncio.run(T.check(now=5000))
     assert T.timers.off_at("a") == 1000.0
+
+
+def test_timer_minutes_setting():
+    from app.config import DEFAULT_TIMER_MINUTES, parse_minutes
+
+    assert parse_minutes("15, 45,90;600,abc,0,45") == [15, 45, 90, 600]
+    assert parse_minutes("") == DEFAULT_TIMER_MINUTES
+    assert parse_minutes("2000") == DEFAULT_TIMER_MINUTES  # meer dan 24 uur telt niet
+    assert len(parse_minutes(",".join(str(i) for i in range(1, 20)))) == 8
