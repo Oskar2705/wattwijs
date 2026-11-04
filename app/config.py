@@ -28,6 +28,14 @@ def _str(name: str, default: str = "") -> str:
     return (os.getenv(name) or default).strip()
 
 
+def _optfloat(name: str) -> float | None:
+    val = (os.getenv(name) or "").strip().replace(",", ".")
+    try:
+        return float(val) if val else None
+    except ValueError:
+        return None
+
+
 DEFAULT_TIMER_MINUTES = [30, 60, 90, 120, 180]
 
 
@@ -127,6 +135,10 @@ class Config:
     push_weekly_time: str = field(default_factory=lambda: _str("PUSH_WEEKLY_TIME", "19:00"))  # zondag
     push_block_hours: float = field(default_factory=lambda: _float("PUSH_BLOCK_HOURS", 2))
     push_block_window: str = field(default_factory=lambda: _str("PUSH_BLOCK_WINDOW", "07:00-23:00"))
+    # Zonverwachting voor de ochtendtip (Open-Meteo). Leeg = uit.
+    latitude: float | None = field(default_factory=lambda: _optfloat("LATITUDE"))
+    longitude: float | None = field(default_factory=lambda: _optfloat("LONGITUDE"))
+    solar_tip_min_w: float = field(default_factory=lambda: _float("SOLAR_TIP_MIN_W", 600))
     # Pushbericht bij teruglevering. Leeg = vanaf CONTRACT_START (einde salderen).
     push_export_from: str = field(default_factory=lambda: _str("PUSH_EXPORT_FROM"))
     push_export_w: float = field(default_factory=lambda: _float("PUSH_EXPORT_W", 500))

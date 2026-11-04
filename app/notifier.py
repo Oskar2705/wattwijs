@@ -7,7 +7,7 @@ import logging
 from datetime import date, datetime, time as dtime, timedelta
 from typing import Any
 
-from . import exportwatch, push
+from . import exportwatch, push, solarforecast
 from .config import config
 from .db import consumption_wh, get_db, self_sufficiency
 from .prices import QUARTER, cheapest_block, price_info, windows
@@ -73,7 +73,20 @@ def best_block_today(now: datetime) -> dict[str, Any] | None:
     return cheapest_block(rows, q)
 
 
-def build_morning(now: datetime) -> tuple[str, str] | None:
+def net_metering_over(d: date) -> bool:
+    """Is salderen voorbij (CONTRACT_START)? Dan is zelf verbruiken meer waard dan terugleveren."""
+    try:
+        return bool(config.contract_start) and d >= date.fromisoformat(config.contract_start)
+    except ValueError:
+        return False
+
+
+def kw(w: float) -> str:
+    return f"{w / 1000:.1f}".replace(".", ",") + " kW"
+
+
+def build_morning(now: datetime, sun: dict[str, Any] | None = None) -> tuple[str, str] | None:
+    """Ochtendtip. `sun` is het zonnigste blok van vandaag (zie solarforecast.sun_block), of None."""
     db = get_db()
     today = now.date()
     lines: list[str] = []
@@ -82,7 +95,15 @@ def build_morning(now: datetime) -> tuple[str, str] | None:
     s, e = _day_bounds(today)
     rows = db.prices_between(s, e)
     block = best_block_today(now) if rows else None
-    if block:
+    sun_first = bool(sun) and net_metering_over(today)
+    if sun_first:
+        title = f"Vandaag zon over: {hm(sun['start'])}–{hm(sun['end'])}"
+        lines.append(f"Beste moment voor vaatwasser of wasmachine: {hm(sun['start'])}–{hm(sun['end'])}. "
+                     f"Dan is er naar verwachting zo'n {kw(sun['surplus_w'])} zonnestroom over.")
+        if block:
+            lines.append(f"Moet het op een ander moment, dan is {hm(block['start'])}–{hm(block['end'])} "
+                         f"het goedkoopst ({cent(block['avg'])} per kWh).")
+    elif block:
         title = f"Vandaag het goedkoopst: {hm(block['start'])}–{hm(block['end'])}"
         rest = [r for r in rows if r["ts"] >= int(now.timestamp()) - QUARTER]
         hi = max(rest, key=lambda r: r["all_in"]) if rest else None
@@ -90,6 +111,10 @@ def build_morning(now: datetime) -> tuple[str, str] | None:
         if hi:
             line += f" Duurst rond {hm(hi['ts'])} ({cent(hi['all_in'])})."
         lines.append(line)
+    if sun and not sun_first:
+        lines.append(f"Meeste zon: {hm(sun['start'])}–{hm(sun['end'])}, naar verwachting zo'n "
+                     f"{kw(sun['surplus_w'])} zonnestroom over.")
+    if rows:
         neg = windows([r for r in rows if r["ts"] >= int(now.timestamp()) - QUARTER], lambda r: r["export"] < 0)
         for w in neg:
             lines.append(f"Tussen {hm(w['start'])} en {hm(w['end'])} is de prijs negatief: stroom gebruiken levert dan zelfs iets op.")
@@ -239,7 +264,7 @@ async def run() -> None:
 
             if hhmm >= _hhmm(config.push_morning_time) and now.hour < 12:
                 async def morning() -> None:
-                    msg = build_morning(now)
+                    msg = build_morning(now, await solarforecast.sun_block(now))
                     if msg:
                         await push.broadcast("morning", *msg, url="/#nu", tag="morning")
                 await _once(f"push_morning_{today}", morning)

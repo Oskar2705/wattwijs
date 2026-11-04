@@ -138,6 +138,12 @@ Overdag worden de tegels elke `PANEL_REFRESH_MINUTES` (15) minuten ververst, en 
 - Bedragen vóór `CONTRACT_START` zijn een indicatie.
 - Wil je de prijzen per onderdeel vergelijken met de app van je leverancier, gebruik dan `docker compose exec wattwijs python -m app.checkprices [JJJJ-MM-DD]`.
 
+## Zonverwachting in de ochtendtip
+
+Vul `LATITUDE` en `LONGITUDE` in (de plek van het huis, in decimale graden) en de ochtendtip kijkt ook naar het weer. De app haalt de verwachte zonnestraling per uur op bij [Open-Meteo](https://open-meteo.com) (gratis voor niet-commercieel gebruik, zonder account). Paneelgegevens zijn niet nodig: de app leert uit de opbrengst van de afgelopen drie weken hoeveel watt het dak per W/m² levert, per uur van de dag, dus de ligging en vaste schaduw tellen mee. Daar gaat het gebruikelijke verbruik van het huis op dat uur af, en de tip noemt het blok met het grootste verwachte overschot, als dat minstens `SOLAR_TIP_MIN_W` is.
+
+Zolang je saldeert (vóór `CONTRACT_START`) blijft het goedkoopste blok het hoofdadvies en komt het zonnige blok er als extra regel bij, omdat teruggeleverde stroom dan tegen dezelfde prijs wordt verrekend. Vanaf `CONTRACT_START` komt het zonnige blok voorop en is het goedkoopste blok de terugvaloptie. De app heeft eerst een paar zonnige dagen geschiedenis nodig voordat hij een zontip geeft.
+
 ## App op het beginscherm en pushmeldingen
 
 De app is een installeerbare webapp: een eigen icoon, geen browserbalken en pushmeldingen. Een App Store-app is niet nodig.
@@ -153,7 +159,7 @@ Pushmeldingen hebben **https** nodig. Het makkelijkst is `tailscale serve --bg -
 
 | Soort | Wanneer |
 |---|---|
-| Ochtendtip | `PUSH_MORNING_TIME`: het goedkoopste blok van `PUSH_BLOCK_HOURS` uur binnen `PUSH_BLOCK_WINDOW`, het duurste moment, negatieve prijzen, gisteren in het kort, en een paneel dat nog stuk is |
+| Ochtendtip | `PUSH_MORNING_TIME`: het goedkoopste blok van `PUSH_BLOCK_HOURS` uur binnen `PUSH_BLOCK_WINDOW`, het duurste moment, negatieve prijzen, gisteren in het kort, en een paneel dat nog stuk is. Met `LATITUDE`/`LONGITUDE` noemt hij ook het zonnigste blok met het verwachte overschot (zie hieronder) |
 | Zonnepaneel | direct na de avondcontrole, als een paneel kapot gaat of weer werkt |
 | Negatieve prijs | rond 13:00, als morgen de prijs negatief wordt |
 | Teruglevering | vanaf `CONTRACT_START`: het huis levert al `PUSH_EXPORT_MINUTES` minuten meer dan `PUSH_EXPORT_W` terug (en de batterij is vol). In het stookseizoen met de tip om de verwarming een graad hoger te zetten, en een herinnering om `PUSH_HEAT_BACK_TIME` |

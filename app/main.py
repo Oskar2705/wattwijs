@@ -540,7 +540,10 @@ async def push_test(request: Request) -> dict[str, Any]:
     kind = body.get("kind")
     msg = None
     if kind == "morning":
-        msg = notifier.build_morning(datetime.now(config.tz))
+        from . import solarforecast
+
+        now = datetime.now(config.tz)
+        msg = notifier.build_morning(now, await solarforecast.sun_block(now))
     elif kind == "export":
         from . import exportwatch
 

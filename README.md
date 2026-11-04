@@ -140,6 +140,12 @@ During the day the tiles are refreshed every `PANEL_REFRESH_MINUTES` (15), and r
 - Amounts before `CONTRACT_START` are shown as an indication.
 - To compare the prices component by component with your supplier's app, run `docker compose exec wattwijs python -m app.checkprices [YYYY-MM-DD]`.
 
+## Sun forecast in the morning tip
+
+Set `LATITUDE` and `LONGITUDE` (the home, in decimal degrees) and the morning tip also looks at the weather. The app fetches the hourly solar radiation forecast from [Open-Meteo](https://open-meteo.com) (free for non-commercial use, no account). It does not need panel specifications: it learns from the last three weeks of your own production how many watts your roof delivers per W/m² for each hour of the day, so orientation and fixed shade are included. It subtracts the usual consumption of the house for that hour and suggests the block with the largest expected surplus, if that is at least `SOLAR_TIP_MIN_W`.
+
+While net metering applies (before `CONTRACT_START`) the cheapest block stays the main advice and the sunny block is an extra line, because exported power is then credited at the same price. From `CONTRACT_START` the sunny block comes first and the cheapest block is the fallback. The app needs a few sunny days of history before it gives a sun tip.
+
 ## Home screen app and push notifications
 
 The app is a Progressive Web App: it has its own icon, runs without browser bars and can send push notifications. You don't need an App Store app.
@@ -155,7 +161,7 @@ Push needs **HTTPS**. The easiest way is `tailscale serve --bg --https=8443 http
 
 | Type | When |
 |---|---|
-| Morning tip | `PUSH_MORNING_TIME`: the cheapest `PUSH_BLOCK_HOURS`-hour block within `PUSH_BLOCK_WINDOW`, the most expensive moment, negative prices, yesterday in short, and a panel that is still broken |
+| Morning tip | `PUSH_MORNING_TIME`: the cheapest `PUSH_BLOCK_HOURS`-hour block within `PUSH_BLOCK_WINDOW`, the most expensive moment, negative prices, yesterday in short, and a panel that is still broken. With `LATITUDE`/`LONGITUDE` set it also names the sunniest block with the expected surplus (see below) |
 | Solar panel | right after the evening check, when a panel breaks or recovers |
 | Negative price | around 13:00, when tomorrow has negative prices |
 | Export | from `CONTRACT_START`: the house has exported more than `PUSH_EXPORT_W` for `PUSH_EXPORT_MINUTES` (and the battery is full). In the heating season it suggests turning the heating up a degree, with a reminder at `PUSH_HEAT_BACK_TIME` |
