@@ -79,23 +79,38 @@ def test_recorder_logs_heat_and_temperatures():
     assert p["supply_temp"] == pytest.approx(34.0) and p["outdoor_temp"] == 6.0
 
 
+class _Req:
+    """Nep-Request: de endpoints lezen alleen `await request.json()`."""
+
+    def __init__(self, body):
+        self.body = body
+
+    async def json(self):
+        return self.body
+
+
 def test_api_gas_and_notes():
-    from fastapi.testclient import TestClient
+    # Endpoints rechtstreeks aanroepen: geen testclient nodig (die vraagt een extra pakket).
+    import asyncio
 
-    from app.main import app
+    from fastapi import HTTPException
 
-    c = TestClient(app)
-    r = c.post("/api/heatstats/gas", json={"start": "2026-10-26", "end": "2026-11-01", "m3": "12,5"})
-    assert r.status_code == 200
-    gid = r.json()["id"]
-    assert c.post("/api/heatstats/gas", json={"start": "2026-11-01", "end": "2026-10-26", "m3": 1}).status_code == 400
-    assert c.post("/api/heatstats/gas", json={"start": "2026-10-26", "end": "2026-11-01", "m3": "veel"}).status_code == 400
-    assert c.post("/api/heatstats/gas-base", json={"m3": "0,6"}).json()["gas_base_m3_day"] == 0.6
-    assert c.post("/api/heatstats/note", json={"week_start": "2026-10-27", "text": "x"}).status_code == 400  # dinsdag
-    assert c.post("/api/heatstats/note", json={"week_start": "2026-10-26", "text": "eco aan"}).status_code == 200
-    d = c.get("/api/heatstats").json()
+    from app import main as M
+
+    run = asyncio.run
+    gid = run(M.gas_add(_Req({"start": "2026-10-26", "end": "2026-11-01", "m3": "12,5"})))["id"]
+    for bad in ({"start": "2026-11-01", "end": "2026-10-26", "m3": 1},
+                {"start": "2026-10-26", "end": "2026-11-01", "m3": "veel"}):
+        with pytest.raises(HTTPException) as e:
+            run(M.gas_add(_Req(bad)))
+        assert e.value.status_code == 400
+    assert run(M.gas_base(_Req({"m3": "0,6"})))["gas_base_m3_day"] == 0.6
+    with pytest.raises(HTTPException):
+        run(M.heat_note(_Req({"week_start": "2026-10-27", "text": "x"})))  # dinsdag
+    assert run(M.heat_note(_Req({"week_start": "2026-10-26", "text": "eco aan"})))["text"] == "eco aan"
+    d = M.heatstats()
     assert any(g["id"] == gid for g in d["gas"]) and d["gas_base_m3_day"] == 0.6
-    assert c.delete(f"/api/heatstats/gas/{gid}").status_code == 200
+    assert M.gas_delete(gid) == {"deleted": gid}
     get_db().set_kv("gas_base_m3_day", "")
 
 
