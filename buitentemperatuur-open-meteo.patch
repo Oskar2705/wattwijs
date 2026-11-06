@@ -1,0 +1,305 @@
+diff --git a/README.md b/README.md
+index 98368e7..f42c4a0 100644
+--- a/README.md
++++ b/README.md
+@@ -151,6 +151,7 @@ While net metering applies (before `CONTRACT_START`) the cheapest block stays th
+ The Climate tab has a weekly heating overview: average outdoor temperature, degree days (per day 18 degrees minus the average outdoor temperature), electricity use, heat delivered and COP of the heat pump, average supply temperature and gas use. Electricity and gas are also shown per degree day, so weeks with different settings (heat curve, eco mode, smart control) can be compared fairly, even when one week was colder. You can add a note per week, for example which setting applied.
+ 
+ - Heat, supply and outdoor temperature come from the heat pump (currently the DeWarmte integration) and are stored per minute.
++- For degree days the app uses, with `LATITUDE`/`LONGITUDE`, the daily mean outdoor temperature from Open-Meteo (up to 92 days back). That way every week uses the same source, including weeks before measuring started. Without a location the heat pump's sensor is used.
+ - Gas is not read automatically: enter the usage over a period, for example weekly from your energy supplier's app.
+ - Gas also goes to showering and cooking. Set how much that is per day (in the app, or with `GAS_BASE_M3_PER_DAY`); that part is subtracted. A good estimate is your average per day in summer.
+ 
+diff --git a/README.nl.md b/README.nl.md
+index 6989cd7..cb691dd 100644
+--- a/README.nl.md
++++ b/README.nl.md
+@@ -149,6 +149,7 @@ Zolang je saldeert (vóór `CONTRACT_START`) blijft het goedkoopste blok het hoo
+ Op het tabblad Klimaat staat een weekoverzicht van de verwarming: de gemiddelde buitentemperatuur, het aantal graaddagen (per dag 18 graden min de gemiddelde buitentemperatuur), het stroomverbruik, de geleverde warmte en de COP van de warmtepomp, de gemiddelde aanvoertemperatuur en het gasverbruik. Stroom en gas staan ook per graaddag. Zo kun je weken met andere instellingen (stooklijn, eco-stand, slimme sturing) eerlijk vergelijken, ook als het de ene week kouder was. Per week kun je een notitie maken, bijvoorbeeld welke instelling er die week gold.
+ 
+ - Warmte, aanvoer- en buitentemperatuur komen van de warmtepomp (nu de DeWarmte-koppeling) en worden per minuut opgeslagen.
++- Voor de graaddagen gebruikt de app met `LATITUDE`/`LONGITUDE` de gemiddelde buitentemperatuur per dag van Open-Meteo (tot 92 dagen terug). Zo rekent elke week met dezelfde bron, ook de weken van vóór het meten. Zonder locatie telt de sensor van de warmtepomp.
+ - Gas lees je niet automatisch uit: vul het verbruik over een periode in, bijvoorbeeld wekelijks vanuit de app van je energieleverancier.
+ - Gas gaat ook naar douchen en koken. Stel in hoeveel dat per dag is (in de app, of met `GAS_BASE_M3_PER_DAY`); dat deel wordt afgetrokken. Een goede schatting is je gemiddelde per dag in de zomer.
+ 
+diff --git a/app/db.py b/app/db.py
+index e98d84b..5a26662 100644
+--- a/app/db.py
++++ b/app/db.py
+@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS push_sub (
+ 
+ CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+ 
++CREATE TABLE IF NOT EXISTS weather_day (
++    day TEXT PRIMARY KEY,           -- lokale datum
++    temp_mean REAL,                 -- gemiddelde buitentemperatuur (°C)
++    source TEXT
++);
++
+ CREATE TABLE IF NOT EXISTS gas_period (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     start TEXT NOT NULL,            -- eerste dag (lokaal, JJJJ-MM-DD)
+@@ -306,6 +312,19 @@ class DB:
+     def delete_gas(self, gid: int) -> None:
+         self.x("DELETE FROM gas_period WHERE id=?", (gid,))
+ 
++    def save_weather_days(self, rows: list[tuple[str, float]], source: str) -> None:
++        with self.lock:
++            self.conn.executemany(
++                "INSERT INTO weather_day(day, temp_mean, source) VALUES(?,?,?) "
++                "ON CONFLICT(day) DO UPDATE SET temp_mean=excluded.temp_mean, source=excluded.source",
++                [(d, t, source) for d, t in rows],
++            )
++            self.conn.commit()
++
++    def weather_days(self, start: str, end: str) -> dict[str, float]:
++        return {r["day"]: r["temp_mean"] for r in self.q(
++            "SELECT day, temp_mean FROM weather_day WHERE day BETWEEN ? AND ? AND temp_mean IS NOT NULL", (start, end))}
++
+     def heating_days(self, start: str, end: str) -> list[dict[str, Any]]:
+         """Per dag: stroom en warmte van de warmtepomp, gewogen aanvoertemperatuur, buiten- en
+         kamertemperatuur, en de stroomkosten van de warmtepomp tegen de kwartierprijzen."""
+diff --git a/app/heating_stats.py b/app/heating_stats.py
+index 0ae08ea..3c2df41 100644
+--- a/app/heating_stats.py
++++ b/app/heating_stats.py
+@@ -57,8 +57,19 @@ def _r(v: float | None, n: int = 1) -> float | None:
+     return None if v is None else round(v, n)
+ 
+ 
++def day_temp(r: dict[str, Any], weather: dict[str, float], k: str) -> float | None:
++    """Buitentemperatuur van de dag: Open-Meteo als die er is (voor alle weken dezelfde bron),
++    anders de sensor van de warmtepomp als die genoeg van de dag gemeten heeft."""
++    if k in weather:
++        return float(weather[k])
++    if (r.get("outdoor_minutes") or 0) >= MIN_TEMP_MINUTES and r.get("outdoor_temp") is not None:
++        return float(r["outdoor_temp"])
++    return None
++
++
+ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float], today: date,
+-                   base: float = 0.0) -> dict[str, Any]:
++                   base: float = 0.0, weather: dict[str, float] | None = None) -> dict[str, Any]:
++    weather = weather or {}
+     by_day = {r["day"]: r for r in days}
+     n_days = min(7, (today - start).days + 1)
+     keys = [(start + timedelta(days=i)).isoformat() for i in range(n_days)]
+@@ -69,6 +80,7 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
+     hp_cost = 0.0
+     priced = minutes = gas_days = temp_days = 0
+     rooms: list[float] = []
++    temps: list[float] = []
+     for k in keys:
+         r = by_day.get(k) or {}
+         h, q = float(r.get("hp_wh") or 0.0), float(r.get("heat_wh") or 0.0)
+@@ -84,8 +96,10 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
+         minutes += int(r.get("minutes") or 0)
+         if r.get("room_temp") is not None:
+             rooms.append(float(r["room_temp"]))
+-        g = degree_days(r.get("outdoor_temp")) if (r.get("outdoor_minutes") or 0) >= MIN_TEMP_MINUTES else None
++        t = day_temp(r, weather, k)
++        g = degree_days(t)
+         if g is not None:
++            temps.append(t)
+             temp_days += 1
+             gd += g
+             gd_hp_wh += h
+@@ -103,9 +117,7 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
+         "temp_days": temp_days,
+         "gas_days": gas_days,
+         "degree_days": _r(gd) if temp_days else None,
+-        "outdoor_temp": _r(sum(float(by_day[k]["outdoor_temp"]) for k in keys
+-                               if k in by_day and by_day[k].get("outdoor_temp") is not None) / temp_days)
+-        if temp_days else None,
++        "outdoor_temp": _r(sum(temps) / len(temps)) if temps else None,
+         "hp_kwh": _r(hp_wh / 1000),
+         "heat_kwh": _r(heat_wh / 1000) if heat_wh else None,
+         "cop": _r(cop_heat_wh / cop_hp_wh, 2) if cop_hp_wh > 0 and cop_heat_wh > 0 else None,
+@@ -127,11 +139,12 @@ def weeks(today: date, n: int = 10) -> list[dict[str, Any]]:
+     days = db.heating_days(first.isoformat(), today.isoformat())
+     gas = gas_per_day(db.gas_periods(limit=1000))
+     base = gas_base_m3_day()
++    weather = db.weather_days(first.isoformat(), today.isoformat())
+     out = []
+     for i in range(n):
+         s = first + timedelta(weeks=i)
+         wd = [r for r in days if s.isoformat() <= r["day"] < (s + timedelta(days=7)).isoformat()]
+         if not wd and not any(s.isoformat() <= k < (s + timedelta(days=7)).isoformat() for k in gas):
+             continue
+-        out.append(summarize_week(s, wd, gas, today, base))
++        out.append(summarize_week(s, wd, gas, today, base, weather))
+     return list(reversed(out))
+diff --git a/app/main.py b/app/main.py
+index f6c21c7..ed6eeb4 100644
+--- a/app/main.py
++++ b/app/main.py
+@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
+ from fastapi.responses import FileResponse, JSONResponse, Response
+ from fastapi.staticfiles import StaticFiles
+ 
+-from . import aircontimer, heating_stats, integrations, mailer, notifier, panels, prices, push, recorder
++from . import aircontimer, heating_stats, integrations, mailer, notifier, panels, prices, push, recorder, weather
+ from .config import config
+ from .db import ENERGY_COLS, consumption_wh, get_db, month_days, self_sufficiency
+ from .state import state
+@@ -96,6 +96,8 @@ def start_tasks() -> list[asyncio.Task]:
+         tasks.append(aircontimer.run())
+     if config.push_enabled:
+         tasks.append(notifier.run())
++    if weather.enabled() and not config.demo:
++        tasks.append(weather.run())
+     return [asyncio.create_task(t) for t in tasks]
+ 
+ 
+@@ -426,6 +428,7 @@ def heatstats(weeks: int = 10) -> dict[str, Any]:
+         "gas": get_db().gas_periods(limit=50),
+         "gas_base_m3_day": heating_stats.gas_base_m3_day(),
+         "base_temp": 18,
++        "temp_source": "open-meteo" if weather.enabled() else "warmtepomp",
+     }
+ 
+ 
+diff --git a/app/static/app.js b/app/static/app.js
+index 19bb4b8..78b1071 100644
+--- a/app/static/app.js
++++ b/app/static/app.js
+@@ -1497,6 +1497,9 @@ function renderHeatStats() {
+     const inp = $("#hsTable td.note input");
+     if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+   }
++  $("#hsTempSrc").textContent = d.temp_source === "open-meteo"
++    ? " De buitentemperatuur komt van Open-Meteo, zodat elke week met dezelfde bron wordt gerekend."
++    : " De buitentemperatuur komt van de sensor van de warmtepomp.";
+   // gaslijst en basis
+   $("#gasList").innerHTML = d.gas.slice(0, 8).map((g) =>
+     `<li>${shortDay(g.start)} t/m ${shortDay(g.end)}: <strong>${n2(g.m3)} m³</strong><button type="button" data-id="${g.id}" aria-label="Verwijder">verwijder</button></li>`).join("");
+diff --git a/app/static/index.html b/app/static/index.html
+index 64703f5..ba3704c 100644
+--- a/app/static/index.html
++++ b/app/static/index.html
+@@ -222,7 +222,7 @@
+           <p class="hint">Hoeveel stroom en gas het verwarmen kostte, en hoe koud het was. Per graaddag kun je weken eerlijk vergelijken, ook als het de ene week kouder was dan de andere.</p>
+         </div>
+         <div class="table-wrap" id="hsTable"></div>
+-        <p class="hint ac-note">Graaddagen: per dag 18 graden min de gemiddelde buitentemperatuur. COP: hoeveel warmte de warmtepomp per kWh stroom maakt (hoger is beter). Gas telt zonder het deel voor douchen en koken.</p>
++        <p class="hint ac-note">Graaddagen: per dag 18 graden min de gemiddelde buitentemperatuur. COP: hoeveel warmte de warmtepomp per kWh stroom maakt (hoger is beter). Gas telt zonder het deel voor douchen en koken.<span id="hsTempSrc"></span></p>
+         <div class="card hs-form">
+           <h3>Gas invullen</h3>
+           <p class="hint">Neem het gasverbruik over uit de app van je energieleverancier, of reken het uit met twee meterstanden.</p>
+diff --git a/app/weather.py b/app/weather.py
+new file mode 100644
+index 0000000..50b1328
+--- /dev/null
++++ b/app/weather.py
+@@ -0,0 +1,76 @@
++"""Gemiddelde buitentemperatuur per dag van Open-Meteo, voor de graaddagen.
++
++Waarom niet de sensor van de warmtepomp? Die meet pas sinds deze versie, en hangt vlak bij de
++buitenunit (zon, ontdooien). Voor een eerlijke vergelijking tussen weken telt vooral dat élke week
++dezelfde bron gebruikt. Open-Meteo levert tot 92 dagen terug, dus ook de weken van vóór het meten.
++Zonder LATITUDE/LONGITUDE valt het weekoverzicht terug op de sensor van de warmtepomp.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++from datetime import date, datetime
++from typing import Any
++
++import aiohttp
++
++from .config import config
++from .db import get_db
++
++log = logging.getLogger(__name__)
++URL = "https://api.open-meteo.com/v1/forecast"
++PAST_DAYS = 92  # het maximum van de gewone (gratis) API
++REFRESH_S = 6 * 3600
++
++
++def enabled() -> bool:
++    return config.latitude is not None and config.longitude is not None
++
++
++def parse_daily(data: dict[str, Any], today: date) -> list[tuple[str, float]]:
++    """Uurtemperaturen (lokale tijd) -> [(dag, gemiddelde)], alleen dagen t/m vandaag met
++    minstens 20 uurwaarden. Vandaag telt deels als verwachting en wordt later bijgewerkt."""
++    hourly = data.get("hourly") or {}
++    per_day: dict[str, list[float]] = {}
++    for t, v in zip(hourly.get("time") or [], hourly.get("temperature_2m") or []):
++        if v is None:
++            continue
++        per_day.setdefault(str(t)[:10], []).append(float(v))
++    return [(d, round(sum(vs) / len(vs), 2)) for d, vs in sorted(per_day.items())
++            if d <= today.isoformat() and len(vs) >= 20]
++
++
++async def fetch(session: aiohttp.ClientSession) -> dict[str, Any]:
++    params = {
++        "latitude": f"{config.latitude:.4f}",
++        "longitude": f"{config.longitude:.4f}",
++        "hourly": "temperature_2m",
++        "past_days": str(PAST_DAYS),
++        "forecast_days": "1",
++        "timezone": config.tz_name,
++    }
++    async with session.get(URL, params=params, timeout=aiohttp.ClientTimeout(total=30)) as r:
++        r.raise_for_status()
++        return await r.json()
++
++
++async def refresh_once(session: aiohttp.ClientSession, today: date) -> int:
++    rows = parse_daily(await fetch(session), today)
++    get_db().save_weather_days(rows, "open-meteo")
++    return len(rows)
++
++
++async def run() -> None:
++    """Bij de start en daarna elke 6 uur; de laatste dagen worden zo nog bijgewerkt."""
++    if not enabled():
++        return
++    async with aiohttp.ClientSession() as session:
++        while True:
++            try:
++                n = await refresh_once(session, datetime.now(config.tz).date())
++                log.info("Buitentemperatuur per dag bijgewerkt (%d dagen, Open-Meteo)", n)
++                await asyncio.sleep(REFRESH_S)
++            except Exception as exc:  # noqa: BLE001
++                log.warning("Buitentemperatuur ophalen mislukt: %s", exc)
++                await asyncio.sleep(1800)
+diff --git a/tests/test_heating_stats.py b/tests/test_heating_stats.py
+index 7984e45..2635f11 100644
+--- a/tests/test_heating_stats.py
++++ b/tests/test_heating_stats.py
+@@ -97,3 +97,30 @@ def test_api_gas_and_notes():
+     assert any(g["id"] == gid for g in d["gas"]) and d["gas_base_m3_day"] == 0.6
+     assert c.delete(f"/api/heatstats/gas/{gid}").status_code == 200
+     get_db().set_kv("gas_base_m3_day", "")
++
++
++def test_weather_parse_and_preference():
++    from app import weather as W
++
++    times = [f"2041-01-0{d}T{h:02d}:00" for d in (1, 2, 3) for h in range(24)]
++    temps = [2.0 if h < 12 else 4.0 for d in (1, 2, 3) for h in range(24)]
++    temps[24:34] = [None] * 10  # 2 januari: te weinig uren
++    data = {"hourly": {"time": times, "temperature_2m": temps}}
++    assert W.parse_daily(data, date(2041, 1, 3)) == [("2041-01-01", 3.0), ("2041-01-03", 3.0)]
++    # Open-Meteo gaat voor de sensor; zonder Open-Meteo telt de sensor alleen bij genoeg metingen
++    r = {"outdoor_temp": 9.0, "outdoor_minutes": 1440}
++    assert H.day_temp(r, {"2041-01-01": 3.2}, "2041-01-01") == 3.2
++    assert H.day_temp(r, {}, "2041-01-01") == 9.0
++    assert H.day_temp({"outdoor_temp": 9.0, "outdoor_minutes": 100}, {}, "2041-01-01") is None
++
++
++def test_old_weeks_get_degree_days_from_weather():
++    mon = date(2041, 3, 4)
++    assert mon.weekday() == 0
++    for i in range(7):
++        _seed(mon + timedelta(days=i), outdoor=None, cop=0.0)  # oude data: geen sensor, geen warmte
++    get_db().save_weather_days([((mon + timedelta(days=i)).isoformat(), 6.0) for i in range(7)], "open-meteo")
++    w = H.weeks(mon + timedelta(days=6), n=1)[0]
++    assert w["degree_days"] == 84.0 and w["outdoor_temp"] == 6.0
++    assert w["hp_kwh_per_dd"] == pytest.approx(100.8 / 84, abs=0.01)
++    assert w["cop"] is None
