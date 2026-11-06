@@ -220,6 +220,7 @@ def outlook(data: dict[str, dict[int, float]], now: datetime) -> dict[str, Any]:
     base = baseline(actual)
     day = predict(rad, cal, base, d0, d1)
     out["solar_kwh"] = round(sum(h["solar_w"] for h in day) / 1000, 1)
+    out["hours"] = [{"start": h["start"], "solar_w": h["solar_w"]} for h in day]  # voor het dagrapport
     w_start, w_end = _window(now)
     hours = [h for h in day if max(w_start, nowts - nowts % HOUR) <= h["start"] < w_end]
     out["block"] = best_block(hours, max(1, round(config.push_block_hours)), config.solar_tip_min_w)
@@ -246,9 +247,19 @@ async def day_outlook(now: datetime) -> dict[str, Any] | None:
     log.info("Zonverwachting: %s zonuren, %s kWh, blok %s", o["sun_hours"], o["solar_kwh"],
              f"{datetime.fromtimestamp(o['block']['start'], config.tz):%H:%M} ({o['block']['surplus_w']} W over)"
              if o["block"] else "-")
+    db = get_db()
     if o["solar_kwh"] is not None:
-        get_db().set_kv(f"solar_expected_{now.date().isoformat()}", str(o["solar_kwh"]))
+        db.set_kv(f"solar_expected_{now.date().isoformat()}", str(o["solar_kwh"]))
+    db.set_kv(f"outlook_{now.date().isoformat()}", json.dumps(o))  # het dagrapport laat de verwachting zien
     return o
+
+
+def saved_outlook(day: str) -> dict[str, Any] | None:
+    """De verwachting zoals die 's ochtends voor deze dag werd gemaakt (of None)."""
+    try:
+        return json.loads(get_db().get_kv(f"outlook_{day}") or "null")
+    except ValueError:
+        return None
 
 
 async def sun_block(now: datetime) -> dict[str, Any] | None:

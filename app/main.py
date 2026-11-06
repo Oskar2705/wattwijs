@@ -208,6 +208,44 @@ def live() -> dict[str, Any]:
 # ---------------- airco's ----------------
 
 
+@app.get("/api/report")
+def day_report(day: str | None = None) -> dict[str, Any]:
+    """Dagrapport: het verhaal van de dag, de cijfers, de verwachting van die ochtend en per uur
+    de opwek tegenover de verwachting. Zonder `day`: vandaag (tot nu toe)."""
+    from . import solarforecast
+
+    d = today().isoformat() if not day else day
+    try:
+        dd = date.fromisoformat(d)
+    except ValueError:
+        raise HTTPException(400, "Ongeldige datum.") from None
+    db = get_db()
+    t = notifier._totals(d)
+    has_data = (t.get("minutes") or 0) >= 60
+    o = solarforecast.saved_outlook(d)
+    fc = {datetime.fromtimestamp(h["start"], config.tz).hour: h["solar_w"] for h in (o or {}).get("hours") or []}
+    hours = []
+    for r in db.by_hour(d):
+        hours.append({"hour": int(r["bucket"]), "solar_wh": round(r.get("solar_wh") or 0.0),
+                      "house_wh": round(consumption_wh(r)), "forecast_wh": fc.get(int(r["bucket"]))})
+    seen = {h["hour"] for h in hours}
+    hours += [{"hour": h, "solar_wh": None, "house_wh": None, "forecast_wh": w} for h, w in fc.items() if h not in seen]
+    hours.sort(key=lambda h: h["hour"])
+    first = db.first_day()
+    return {
+        "day": d,
+        "is_today": d == today().isoformat(),
+        "first_day": first,
+        "has_data": has_data,
+        "title": notifier.evening_title(t) if has_data else "Nog geen gegevens",
+        "story": notifier.story(dd) if has_data else [],
+        "totals": _with_ratios(t) if has_data else None,
+        "money": notifier.net_metering_over(dd),
+        "forecast": None if not o else {k: o.get(k) for k in ("sun_hours", "sun_window", "solar_kwh", "block")},
+        "hours": hours,
+    }
+
+
 @app.get("/api/aircon")
 async def aircon_view() -> dict[str, Any]:
     src = state.aircon

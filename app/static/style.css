@@ -455,3 +455,20 @@ a.btn { display: inline-block; text-decoration: none; }
 .hs-list button { font: inherit; background: none; border: 0; color: var(--ink-3); text-decoration: underline; cursor: pointer; margin-left: .5rem; }
 #hsTable th { white-space: normal; min-width: 4.8rem; max-width: 6.5rem; vertical-align: bottom; }
 #hsTable td { white-space: nowrap; }
+
+/* ================= dagrapport ================= */
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.section-head .link { font-size: .95rem; }
+#view-rapport .controls { justify-content: space-between; }
+.rep-title { font-size: clamp(1.5rem, 4vw, 2rem); margin: 1.4rem 0 .6rem; text-wrap: balance; }
+.rep-story { max-width: 62ch; margin-top: 1.2rem; }
+.rep-story p { font-size: 1.08rem; line-height: 1.6; margin: 0 0 .9rem; }
+.rep-forecast { display: grid; gap: .3rem; border-left: 4px solid var(--sun); }
+.rep-forecast h3 { margin: 0; font-size: .95rem; color: var(--ink-2); font-weight: 600; }
+.rep-forecast p { margin: 0; font-size: 1.02rem; }
+.rep-forecast .vs { font-variant-numeric: tabular-nums; }
+.rep-chart { height: 220px; }
+.rep-tiles { margin-top: 1.2rem; grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 640px) { .rep-tiles { grid-template-columns: 1fr 1fr; } }
+.rep-empty { color: var(--ink-3); }
+.legend .fc { display: inline-block; width: .9rem; height: .6rem; border: 1.5px dashed var(--sun); border-radius: 2px; margin-right: .35rem; vertical-align: middle; }

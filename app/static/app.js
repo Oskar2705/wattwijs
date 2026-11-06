@@ -1601,15 +1601,115 @@ function initHeatStats() {
   });
 }
 
+
+/* ================= dagrapport ================= */
+const rep = { day: localDate(), data: null };
+
+function addDays(iso, n) {
+  const d = new Date(iso + "T12:00:00");
+  d.setDate(d.getDate() + n);
+  return localDate(d);
+}
+
+async function loadReport(day) {
+  rep.day = day || localDate();
+  $("#repLabel").textContent = rep.day === localDate() ? "Vandaag" : dayName(rep.day, { weekday: "long", day: "numeric", month: "long" });
+  $("#repNext").disabled = rep.day >= localDate();
+  const d = rep.data = await getJSON(`/api/report?day=${rep.day}`);
+  $("#repPrev").disabled = !!d.first_day && rep.day <= d.first_day;
+  $("#repTitle").textContent = d.has_data ? d.title.replace(/^Vandaag/, d.is_today ? "Vandaag" : dayName(d.day, { weekday: "long" }).replace(/^./, (c) => c.toUpperCase())) : "Voor deze dag zijn nog geen gegevens";
+
+  // verwachting van die ochtend
+  const f = d.forecast, box = $("#repForecast");
+  if (f && (f.sun_hours != null || f.solar_kwh != null)) {
+    const parts = [];
+    if (f.sun_hours != null) parts.push(f.sun_hours < 0.75 ? "nauwelijks zon" : `zo'n ${nl0.format(Math.max(1, Math.round(f.sun_hours)))} uur zon`);
+    const lead = parts.join("").replace(/^./, (c) => c.toUpperCase());
+    let html = `<h3>${d.is_today ? "Verwachting voor vandaag" : "Verwachting van die ochtend"}</h3><p>${lead}`;
+    if (f.sun_window && f.sun_hours >= 0.75) html += `, vooral tussen ${clock(f.sun_window.start)} en ${clock(f.sun_window.end)}`;
+    html += ".</p>";
+    if (f.solar_kwh != null && d.totals) {
+      html += `<p class="vs">Verwacht ${fmtKwh(f.solar_kwh * 1000)}, ${d.is_today ? "tot nu toe" : ""} opgewekt <strong>${fmtKwh(d.totals.solar_wh)}</strong>.</p>`.replace(",  opgewekt", ", opgewekt");
+    }
+    if (f.block) html += `<p>Meeste stroom over tussen ${clock(f.block.start)} en ${clock(f.block.end)} (tot ${nl1.format(f.block.surplus_w / 1000)} kW).</p>`;
+    box.innerHTML = html;
+    box.hidden = false;
+  } else box.hidden = true;
+
+  // het verhaal
+  $("#repStory").innerHTML = d.story.length ? d.story.map((p) => `<p>${esc(p)}</p>`).join("")
+    : `<p class="rep-empty">${d.is_today ? "Er is vandaag nog te weinig gemeten voor een rapport." : "Er is voor deze dag niets gemeten."}</p>`;
+
+  // per uur: opwek tegenover verwachting en verbruik
+  const hrs = d.hours || [];
+  $("#repChartCard").hidden = !hrs.some((h) => h.solar_wh || h.house_wh || h.forecast_wh);
+  drawReportChart();
+
+  // cijfers
+  const t = d.totals;
+  const tile = (k, c, v, sub = "") => `<div class="tile"><div class="k">${c ? `<i style="--c:${c}"></i>` : ""}${k}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>`;
+  const kwh = (wh) => `${fmtKwh(wh, false)}<small>kWh</small>`;
+  $("#repTiles").innerHTML = !t ? "" : [
+    tile("Eigen stroom", "", t.self_sufficiency == null ? "–" : `${nl0.format(t.self_sufficiency)}<small>%</small>`, "van het verbruik"),
+    tile("Opgewekt", COLORS.sun, kwh(t.solar_wh)),
+    tile("Verbruikt", COLORS.house, kwh(t.house_wh)),
+    tile("Warmtepomp", COLORS.hp, kwh(t.heatpump_wh)),
+    tile("Van het net", COLORS.grid, kwh(t.import_wh)),
+    tile("Teruggeleverd", COLORS.grid, kwh(t.export_wh)),
+    ...(d.money && t.net_cost != null ? [tile("Kosten", "", eur(t.net_cost), "afname min teruglevering")] : []),
+  ].join("");
+  $("#repTiles").hidden = !t;
+}
+
+function drawReportChart() {
+  const d = rep.data, el = $("#repChart");
+  if (!d || $("#repChartCard").hidden) return;
+  const byH = new Map((d.hours || []).map((h) => [h.hour, h]));
+  const first = Math.min(6, ...[...byH.keys()].filter((h) => (byH.get(h).solar_wh || byH.get(h).forecast_wh)));
+  const last = Math.max(20, ...[...byH.keys()].filter((h) => (byH.get(h).solar_wh || byH.get(h).forecast_wh)));
+  const hours = [];
+  for (let h = first; h <= last; h++) hours.push(byH.get(h) || { hour: h });
+  const w = el.clientWidth || 600, H = el.clientHeight || 220, padL = 34, padB = 22, padT = 8;
+  const max = Math.max(500, ...hours.map((h) => Math.max(h.solar_wh || 0, h.forecast_wh || 0, h.house_wh || 0))) * 1.08;
+  const bw = (w - padL) / hours.length;
+  const y = (v) => padT + (H - padT - padB) * (1 - v / max);
+  const step = max > 4000 ? 1000 : 500;
+  let svg = `<svg viewBox="0 0 ${w} ${H}" role="img" aria-label="Opwek, verwachting en verbruik per uur">`;
+  for (let v = 0; v <= max; v += step) {
+    svg += `<line x1="${padL}" x2="${w}" y1="${y(v)}" y2="${y(v)}" stroke="var(--rule)"/><text x="${padL - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--ink-3)">${nl1.format(v / 1000)}</text>`;
+  }
+  const pts = [];
+  hours.forEach((h, i) => {
+    const x = padL + i * bw;
+    // eerst de verwachting (gestippeld), daaroverheen wat echt is opgewekt
+    if (h.forecast_wh) svg += `<rect x="${x + bw * 0.18}" y="${y(h.forecast_wh)}" width="${bw * 0.64}" height="${y(0) - y(h.forecast_wh)}" rx="3" fill="none" stroke="var(--sun)" stroke-width="1.5" stroke-dasharray="4 3"><title>${h.hour}:00 verwacht ${fmtKwh(h.forecast_wh)}</title></rect>`;
+    if (h.solar_wh) svg += `<rect x="${x + bw * 0.18}" y="${y(h.solar_wh)}" width="${bw * 0.64}" height="${y(0) - y(h.solar_wh)}" rx="3" fill="var(--sun)"><title>${h.hour}:00 opgewekt ${fmtKwh(h.solar_wh)}</title></rect>`;
+    if (h.house_wh != null) pts.push(`${x + bw / 2},${y(h.house_wh)}`);
+    if (h.hour % 3 === 0) svg += `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="11" fill="var(--ink-3)">${h.hour}:00</text>`;
+  });
+  if (pts.length > 1) svg += `<polyline points="${pts.join(" ")}" fill="none" stroke="var(--house)" stroke-width="2" stroke-linejoin="round"/>`;
+  el.innerHTML = svg + "</svg>";
+  const hasFc = hours.some((h) => h.forecast_wh);
+  $("#repLegend").innerHTML = `<span><i class="box" style="--c:var(--sun)"></i>Opgewekt (kWh)</span>${hasFc ? `<span><span class="fc"></span>Verwacht</span>` : ""}<span><i style="--c:var(--house)"></i>Verbruik</span>`;
+}
+
+function initReport() {
+  $("#repPrev").addEventListener("click", () => { location.hash = `#rapport/${addDays(rep.day, -1)}`; });
+  $("#repNext").addEventListener("click", () => { location.hash = `#rapport/${addDays(rep.day, 1)}`; });
+  $("#repHist").addEventListener("click", () => { hist.mode = "hour"; hist.key = rep.day; });
+}
+
 function route() {
   let view = (location.hash || "#nu").slice(1);
+  let viewArg = "";
+  if (view.includes("/")) [view, viewArg] = view.split("/", 2);
   if (view === "airco") view = "klimaat"; // oude link
   if (view === "prijzen") { // tik op de prijsbalk: naar de prijskaart op Nu
     history.replaceState(null, "", "#nu");
     view = "nu";
     setTimeout(() => $("#priceCard").scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   }
-  const views = ["nu", "geschiedenis", "panelen", "klimaat", "meldingen"];
+  const views = ["nu", "geschiedenis", "panelen", "klimaat", "meldingen", "rapport"];
   const v = views.includes(view) ? view : "nu";
   for (const id of views) $(`#view-${id}`).hidden = id !== v;
   document.querySelectorAll("a[data-view]").forEach((a) => (a.dataset.view === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
@@ -1619,6 +1719,7 @@ function route() {
   if (v === "geschiedenis") loadHistory().catch(() => {});
   if (v === "panelen") loadPanels().catch(() => {});
   if (v === "klimaat") loadClimate();
+  if (v === "rapport") loadReport(/^\d{4}-\d{2}-\d{2}$/.test(viewArg) ? viewArg : localDate()).catch((e) => { $("#repStory").textContent = `Laden lukte niet: ${e.message || e}`; });
   if (v === "meldingen") renderPush().catch((e) => { $("#pushBox").textContent = `Laden lukte niet: ${e.message || e}`; });
 }
 
@@ -1626,7 +1727,7 @@ window.addEventListener("hashchange", route);
 let resizeT;
 window.addEventListener("resize", () => {
   clearTimeout(resizeT);
-  resizeT = setTimeout(() => { drawCurve(); drawPrices(); if (!$("#view-geschiedenis").hidden) drawHistory(); }, 150);
+  resizeT = setTimeout(() => { drawCurve(); drawPrices(); if (!$("#view-geschiedenis").hidden) drawHistory(); if (!$("#view-rapport").hidden) drawReportChart(); }, 150);
 });
 
 registerSW();
@@ -1635,6 +1736,7 @@ initPanels();
 initAircon();
 initHeating();
 initHeatStats();
+initReport();
 route();
 pollLive();
 setInterval(() => { if (!document.hidden) pollLive(); }, 5000);

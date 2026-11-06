@@ -144,11 +144,14 @@ def test_evening_record_and_weekly():
     get_db().set_kv(f"solar_expected_{rec.isoformat()}", "11.0")
     title, body = notifier.build_evening(rec)
     assert title.startswith("Vandaag") and "eigen stroom" in title
-    assert "12,6 kWh opgewekt (verwacht: 11,0 kWh)." in body
-    assert "Verbruik" in body and "meteen gebruikt" in body and "Van het net:" in body
-    assert len(body) <= notifier.BODY_MAX
-    assert "Stroom vandaag" not in body  # geen contract ingesteld: geen bedragen
-    assert "Nieuw record" in body
+    assert body.startswith("De panelen wekten 12,6 kWh op, meer dan verwacht. Het huis gebruikte")
+    assert "Nieuw record" in body and len(body) <= notifier.BODY_MAX
+    # het hele verhaal staat in het dagrapport
+    story = "\n\n".join(notifier.story(rec))
+    assert "De panelen wekten 12,6 kWh op, meer dan de 11,0 kWh die vanochtend verwacht werd." in story
+    assert "Het huis gebruikte" in story and "meteen het huis in" in story and "kwam van het net" in story
+    assert "Stroom vandaag" not in story  # geen contract ingesteld: geen bedragen
+    assert "Nieuw record" in story
     assert notifier.build_evening(d0 + timedelta(days=5))[1].count("Nieuw record") == 0
     sunday = date(2031, 5, 18)
     assert sunday.weekday() == 6
@@ -183,17 +186,16 @@ def test_evening_battery_split_and_price_coverage(monkeypatch):
     assert s["grid_to_batt_wh"] == pytest.approx(2 * 60 * 20)       # 2,4 kWh net de batterij in
     assert s["solar_direct_wh"] == pytest.approx(4 * 60 * 20)       # 4,8 kWh zon direct
     monkeypatch.setattr(config, "contract_start", "2031-01-01")
-    _, body = notifier.build_evening(d)
-    assert "Zon: 4,8 kWh meteen gebruikt, 4,8 kWh in de batterij" in body
-    assert "(+2,4 kWh voor de batterij)" in body
+    body = "\n\n".join(notifier.story(d))
+    assert "4,8 kWh meteen het huis in, 4,8 kWh de batterij in" in body
+    assert "Daarnaast laadde de batterij 2,4 kWh van het net bij." in body
     assert "€" not in body  # geen prijzen voor deze dag
     # maar een paar kwartieren met prijs: nog steeds geen bedragen (zou te laag uitvallen)
     get_db().save_prices([(start + q * 900, d.isoformat(), 0.1, 0.25) for q in range(10)])
-    _, body = notifier.build_evening(d)
-    assert "€" not in body
+    assert "€" not in "\n\n".join(notifier.story(d)) and "€" not in notifier.build_evening(d)[1]
     get_db().save_prices([(start + q * 900, d.isoformat(), 0.1, 0.25) for q in range(96)])
-    _, body = notifier.build_evening(d)
-    assert "Stroom vandaag: €" in body
+    assert "Stroom vandaag: €" in "\n\n".join(notifier.story(d))
+    assert "Stroom kostte vandaag €" in notifier.build_evening(d)[1]
 
 
 def test_once_retries_until_success():
@@ -230,3 +232,23 @@ def test_fit_drops_least_important_parts():
     out = notifier.fit(parts, limit=240)
     assert out == "\n".join(["a" * 100, "b" * 100, "d" * 20])  # c past niet meer, d nog wel
     assert len(out) <= 240
+
+
+def test_day_report_endpoint():
+    import json as _json
+
+    from app import main as M
+
+    d = date(2031, 7, 2)
+    _seed_day(d, solar_scale=1.0)
+    d0 = int(datetime.combine(d, datetime.min.time(), tzinfo=config.tz).timestamp())
+    o = {"sun_hours": 5.2, "sun_window": {"start": d0 + 10 * 3600, "end": d0 + 15 * 3600}, "solar_kwh": 7.5,
+         "block": None, "hours": [{"start": d0 + 12 * 3600, "solar_w": 1500}]}
+    get_db().set_kv(f"outlook_{d.isoformat()}", _json.dumps(o))
+    r = M.day_report(d.isoformat())
+    assert r["has_data"] and r["story"] and r["story"][0].startswith("De panelen wekten")
+    assert r["forecast"]["sun_hours"] == 5.2 and "hours" not in r["forecast"]
+    noon = next(h for h in r["hours"] if h["hour"] == 12)
+    assert noon["forecast_wh"] == 1500 and noon["solar_wh"] > 0
+    empty = M.day_report("2031-07-20")
+    assert not empty["has_data"] and empty["story"] == [] and empty["totals"] is None

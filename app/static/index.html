@@ -118,7 +118,10 @@
         <ul class="price-tips" id="priceTips"></ul>
       </div>
 
-      <h2 class="section-title">Vandaag</h2>
+      <div class="section-head">
+        <h2 class="section-title">Vandaag</h2>
+        <a class="link" href="#rapport" id="todayReport">Dagrapport</a>
+      </div>
       <div class="today" id="today"></div>
       <div class="money" id="todayMoney" hidden></div>
 
@@ -252,6 +255,30 @@
         <p class="hint ac-note" id="acNote">Het verbruik is een schatting: de airco's geven zelf alleen door hoeveel ze per run verbruiken, in stappen van 0,25 kWh. Na een opdracht kan de Smart M-Air-app de airco een minuut lang niet bedienen. De ECO-stand van de afstandsbediening kan via wifi niet worden ingesteld; een opdracht vanuit deze app zet ECO waarschijnlijk uit. Een timer loopt op de server, dus de airco gaat ook uit als je telefoon dicht is; zet je de airco eerder uit, dan vervalt de timer.</p>
       </div>
     </section>
+    <!-- ============ DAGRAPPORT ============ -->
+    <section id="view-rapport" class="view" hidden>
+      <div class="controls">
+        <a class="link" href="#nu" id="repBack">‹ Terug</a>
+        <div class="stepper">
+          <button id="repPrev" aria-label="Vorige dag">‹</button>
+          <span id="repLabel"></span>
+          <button id="repNext" aria-label="Volgende dag">›</button>
+        </div>
+      </div>
+      <h2 class="rep-title" id="repTitle"></h2>
+      <div class="card rep-forecast" id="repForecast" hidden></div>
+      <div class="rep-story" id="repStory"></div>
+      <div class="card" id="repChartCard" hidden>
+        <div class="card-head">
+          <h3>Per uur</h3>
+          <a class="link" href="#geschiedenis" id="repHist">Meer in Geschiedenis</a>
+        </div>
+        <div class="legend" id="repLegend"></div>
+        <div class="chart rep-chart" id="repChart"></div>
+      </div>
+      <div class="today rep-tiles" id="repTiles"></div>
+    </section>
+
     <!-- ============ MELDINGEN ============ -->
     <section id="view-meldingen" class="view" hidden>
       <h2 class="section-title">Meldingen op deze telefoon</h2>

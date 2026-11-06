@@ -227,82 +227,120 @@ def fit(parts: list[str], limit: int = BODY_MAX, sep: str = "\n", prio: list[int
     return sep.join(parts[j] for j in sorted(keep))
 
 
+def story(day: date) -> list[str]:
+    """Het dagverhaal voor het dagrapport in de app: opwek tegenover de verwachting, verbruik, waar de
+    zonnestroom heen ging, vanaf CONTRACT_START de kosten, en een record of mijlpaal als die er is."""
+    d = day.isoformat()
+    t = _totals(d)
+    if (t.get("minutes") or 0) < 60:
+        return []
+    g = lambda k: float(t.get(k) or 0.0)  # noqa: E731
+    solar, house, exp, imp = g("solar_wh"), g("house_wh"), g("export_wh"), g("import_wh")
+    discharge, hp, ac = g("discharge_wh"), g("heatpump_wh"), g("aircon_wh")
+    ss = t["self_sufficiency"]
+    paras: list[str] = []
+
+    # opwek en verbruik
+    p1 = []
+    if solar < 50:
+        p1.append("De panelen wekten vandaag vrijwel niets op.")
+    else:
+        line = f"De panelen wekten {kwh(solar)} op"
+        expected = get_db().get_kv(f"solar_expected_{d}")
+        if expected:
+            diff = solar / 1000 - float(expected)
+            if abs(diff) < 0.3:
+                line += f", ongeveer zoals vanochtend verwacht ({_num(float(expected))} kWh)"
+            else:
+                line += f", {'meer' if diff > 0 else 'minder'} dan de {_num(float(expected))} kWh die vanochtend verwacht werd"
+        p1.append(line + ".")
+    use = f"Het huis gebruikte {kwh(house)}"
+    if hp > 50:
+        use += (f", waarvan de warmtepomp het meeste ({kwh(hp)})" if hp > house / 2 else f", waarvan de warmtepomp {kwh(hp)}")
+    if ac > 50:
+        use += f" en de airco's zo'n {kwh(ac)}"
+    p1.append(use + ".")
+    boiler = t.get("boiler_h")
+    if boiler is not None and boiler >= 0.1:
+        mins = round(boiler * 60)
+        dur = f"{mins} minuten" if mins < 60 else f"{_num(boiler)} uur"
+        p1.append(f"De cv-ketel sprong {dur} bij.")
+    paras.append(" ".join(p1))
+
+    # waar ging de zonnestroom heen
+    direct, to_batt, grid_batt = g("solar_direct_wh"), g("solar_to_batt_wh"), g("grid_to_batt_wh")
+    if solar >= 50:
+        p2 = f"Van de zonnestroom ging {kwh(direct)} meteen het huis in"
+        if to_batt > 50:
+            p2 += f", {kwh(to_batt)} de batterij in"
+        p2 += f" en {kwh(exp)} naar het net." if exp > 50 else "; er ging niets naar het net."
+        if discharge > 50:
+            p2 += f" De batterij gaf later {kwh(discharge)} terug aan het huis."
+        # wat van het net kwam en de batterij in ging, gebruikte het huis (nog) niet
+        p2 += f" De rest ({kwh(max(imp - grid_batt, 0.0))}) kwam van het net."
+        if grid_batt > 50:
+            p2 += f" Daarnaast laadde de batterij {kwh(grid_batt)} van het net bij."
+        paras.append(p2)
+    elif grid_batt > 50:
+        paras.append(f"De batterij laadde {kwh(grid_batt)} van het net bij.")
+
+    # geld: pas vanaf het dynamische contract
+    priced, minutes = t.get("priced_minutes") or 0, t.get("minutes") or 0
+    if net_metering_over(day) and minutes and priced >= PRICE_COVERAGE_MIN * minutes:
+        cost, rev = g("cost_import"), g("revenue_export")
+        net = cost - rev
+        money = f"Stroom vandaag: {eur(net)}." if net >= 0 else f"Vandaag verdiend aan stroom: {eur(-net)}."
+        if rev >= 0.01:
+            money += f" Terugleveren leverde {eur(rev)} op."
+        paras.append(money)
+
+    rec = _record(d, t)
+    if rec:
+        paras.append(rec)
+
+    return paras
+
+
+def evening_title(t: dict[str, Any]) -> str:
+    ss, house = t["self_sufficiency"], float(t.get("house_wh") or 0.0)
+    if ss is not None and ss >= 95:
+        return "🏡 Vandaag bijna helemaal op eigen stroom"
+    if ss is not None and ss >= 5:
+        return f"Vandaag {share_text(ss)} eigen stroom" + (" ☀️" if ss >= 30 else "")
+    return f"Vandaag {kwh(house)} verbruikt"
+
+
 def build_evening(day: date) -> tuple[str, str] | None:
-    """Avondoverzicht, kort genoeg voor een melding op de iPhone: opwek tegenover de verwachting,
-    verbruik, waar de zonnestroom heen ging, vanaf CONTRACT_START de kosten, en een record of mijlpaal."""
+    """Avondmelding: twee hele zinnen met het belangrijkste (opwek, verbruik). Wie meer wil weten tikt
+    erop en ziet het dagrapport. Past op een iPhone (zie BODY_MAX)."""
     d = day.isoformat()
     t = _totals(d)
     if (t.get("minutes") or 0) < 600:
         return None
     g = lambda k: float(t.get(k) or 0.0)  # noqa: E731
-    solar, house, exp, imp = g("solar_wh"), g("house_wh"), g("export_wh"), g("import_wh")
-    discharge, hp, ac = g("discharge_wh"), g("heatpump_wh"), g("aircon_wh")
-    direct, to_batt, grid_batt = g("solar_direct_wh"), g("solar_to_batt_wh"), g("grid_to_batt_wh")
-    ss = t["self_sufficiency"]
+    solar, house, hp = g("solar_wh"), g("house_wh"), g("heatpump_wh")
 
-    # opwek
     if solar < 50:
-        sun_line = "Vrijwel geen zonnestroom vandaag."
+        s1 = "De panelen wekten vandaag vrijwel niets op."
     else:
-        sun_line = f"{kwh(solar)} opgewekt"
+        s1 = f"De panelen wekten {kwh(solar)} op"
         expected = get_db().get_kv(f"solar_expected_{d}")
         if expected:
             diff = solar / 1000 - float(expected)
-            sun_line += (" (zoals verwacht)" if abs(diff) < 0.3 else f" (verwacht: {_num(float(expected))} kWh)")
-        sun_line += "."
-
-    # verbruik
-    use = f"Verbruik {kwh(house)}"
-    parts = []
+            s1 += ", ongeveer zoals verwacht" if abs(diff) < 0.3 else f", {'meer' if diff > 0 else 'minder'} dan verwacht"
+        s1 += "."
+    s2 = f"Het huis gebruikte {kwh(house)}"
     if hp > 50:
-        parts.append(f"warmtepomp {kwh(hp)}")
-    if ac > 50:
-        parts.append(f"airco's ≈ {kwh(ac)}")
-    if parts:
-        use += ", waarvan " + " en ".join(parts)
-    use += "."
+        s2 += f", vooral de warmtepomp ({kwh(hp)})" if hp > house / 2 else f", waarvan de warmtepomp {kwh(hp)}"
+    s2 += "."
 
-    # waar ging de zonnestroom heen, en wat kwam van het net
-    flow = ""
-    if solar >= 50:
-        bits = [f"{kwh(direct)} meteen gebruikt"]
-        if to_batt > 50:
-            bits.append(f"{kwh(to_batt)} in de batterij")
-        if exp > 50:
-            bits.append(f"{kwh(exp)} terug")
-        flow = "Zon: " + ", ".join(bits) + "."
-    batt = f"Batterij gaf {kwh(discharge)} terug aan het huis." if discharge > 50 else ""
-    grid = f"Van het net: {kwh(max(imp - grid_batt, 0.0))}"
-    if grid_batt > 50:
-        grid += f" (+{kwh(grid_batt)} voor de batterij)"
-    grid += "."
-
-    # geld: pas vanaf het dynamische contract
     money = ""
     priced, minutes = t.get("priced_minutes") or 0, t.get("minutes") or 0
     if net_metering_over(day) and minutes and priced >= PRICE_COVERAGE_MIN * minutes:
-        cost, rev = g("cost_import"), g("revenue_export")
-        net = cost - rev
-        money = f"Stroom vandaag: {eur(net)}" if net >= 0 else f"Verdiend aan stroom: {eur(-net)}"
-        money += f" (terugleveren {eur(rev)})." if rev >= 0.01 else "."
-
-    boiler = ""
-    bh = t.get("boiler_h")
-    if bh is not None and bh >= 0.1:
-        mins = round(bh * 60)
-        boiler = f"Cv-ketel: {mins} minuten bijgesprongen." if mins < 60 else f"Cv-ketel: {_num(bh)} uur bijgesprongen."
-
+        net = g("cost_import") - g("revenue_export")
+        money = f"Stroom kostte vandaag {eur(net)}." if net >= 0 else f"Je verdiende vandaag {eur(-net)} aan stroom."
     rec = _record(d, t) or ""
-
-    if ss is not None and ss >= 95:
-        title = "🏡 Vandaag bijna helemaal op eigen stroom"
-    elif ss is not None and ss >= 5:
-        title = f"Vandaag {share_text(ss)} eigen stroom" + (" ☀️" if ss >= 30 else "")
-    else:
-        title = f"Vandaag {kwh(house)} verbruikt"
-    # getoond in deze volgorde; wat niet past op een iPhone, valt weg naar belang (prio)
-    lines = [sun_line, use, flow, batt, grid, boiler, money, rec]
-    return title, fit(lines, prio=[0, 1, 2, 6, 3, 5, 4, 7])
+    return evening_title(t), fit([s1, s2, money, rec], sep=" ")
 
 
 # ---------------- week ----------------
@@ -417,14 +455,14 @@ async def run() -> None:
                 async def morning() -> None:
                     msg = build_morning(now, await solarforecast.day_outlook(now))
                     if msg:
-                        await push.broadcast("morning", *msg, url="/#nu", tag=f"morning-{today}")
+                        await push.broadcast("morning", *msg, url=f"/#rapport/{today}", tag=f"morning-{today}")
                 await _once(f"push_morning_{today}", morning)
 
             if hhmm >= _hhmm(config.push_evening_time):
                 async def evening() -> None:
                     msg = build_evening(today)
                     if msg:
-                        await push.broadcast("records", *msg, url="/#geschiedenis", tag=f"evening-{today}")
+                        await push.broadcast("records", *msg, url=f"/#rapport/{today}", tag=f"evening-{today}")
                 await _once(f"push_evening_{today}", evening)
 
             if today.weekday() == 6 and hhmm >= _hhmm(config.push_weekly_time):
