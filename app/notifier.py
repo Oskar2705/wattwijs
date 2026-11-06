@@ -328,13 +328,27 @@ def build_weekly(day: date) -> tuple[str, str] | None:
 # ---------------- planner ----------------
 
 
+ONCE_TRIES = 5
+
+
 async def _once(key: str, fn) -> None:
-    """Voer fn één keer per sleutel uit (bv. per dag), ook na een herstart."""
+    """Voer fn één keer per sleutel uit (bv. per dag), ook na een herstart.
+
+    Pas als fn gelukt is, telt hij als gedaan. Mislukt hij, dan volgt de minuut erna een nieuwe poging,
+    hooguit ONCE_TRIES keer, zodat een blijvende fout niet elke minuut opnieuw wordt geprobeerd."""
     db = get_db()
     if db.get_kv(key):
         return
+    tries = int(db.get_kv(f"{key}_tries") or 0) + 1
+    db.set_kv(f"{key}_tries", str(tries))
+    try:
+        await fn()
+    except Exception:
+        if tries >= ONCE_TRIES:
+            db.set_kv(key, "failed")
+            log.error("%s: na %d pogingen opgegeven", key, tries)
+        raise
     db.set_kv(key, "1")
-    await fn()
 
 
 def export_watcher() -> exportwatch.ExportWatcher:
@@ -383,21 +397,21 @@ async def run() -> None:
                 async def morning() -> None:
                     msg = build_morning(now, await solarforecast.day_outlook(now))
                     if msg:
-                        await push.broadcast("morning", *msg, url="/#nu", tag="morning")
+                        await push.broadcast("morning", *msg, url="/#nu", tag=f"morning-{today}")
                 await _once(f"push_morning_{today}", morning)
 
             if hhmm >= _hhmm(config.push_evening_time):
                 async def evening() -> None:
                     msg = build_evening(today)
                     if msg:
-                        await push.broadcast("records", *msg, url="/#geschiedenis", tag="records")
+                        await push.broadcast("records", *msg, url="/#geschiedenis", tag=f"evening-{today}")
                 await _once(f"push_evening_{today}", evening)
 
             if today.weekday() == 6 and hhmm >= _hhmm(config.push_weekly_time):
                 async def weekly() -> None:
                     msg = build_weekly(today)
                     if msg:
-                        await push.broadcast("weekly", *msg, url="/#geschiedenis", tag="weekly")
+                        await push.broadcast("weekly", *msg, url="/#geschiedenis", tag=f"weekly-{today}")
                 await _once(f"push_weekly_{today}", weekly)
         except asyncio.CancelledError:
             raise

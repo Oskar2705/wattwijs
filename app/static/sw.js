@@ -39,6 +39,8 @@ self.addEventListener("push", (event) => {
       icon: "/static/icons/icon-192.png",
       badge: "/static/icons/badge-96.png",
       tag: data.tag || undefined,
+      // Vervangt een melding een oudere met dezelfde tag, laat de telefoon dan toch opnieuw geluid geven.
+      renotify: !!data.tag,
       data: { url: data.url || "/" },
     })
   );

@@ -191,3 +191,32 @@ def test_evening_battery_split_and_price_coverage(monkeypatch):
     get_db().save_prices([(start + q * 900, d.isoformat(), 0.1, 0.25) for q in range(96)])
     _, body = notifier.build_evening(d)
     assert "Stroom vandaag: €" in body
+
+
+def test_once_retries_until_success():
+    import asyncio
+
+    calls = []
+
+    async def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError("push-dienst even weg")
+
+    for _ in range(5):
+        try:
+            asyncio.run(notifier._once("test_once_key", flaky))
+        except RuntimeError:
+            pass
+    assert len(calls) == 3  # twee keer mislukt, de derde keer gelukt, daarna niet meer
+    assert get_db().get_kv("test_once_key") == "1"
+
+    async def broken():
+        raise RuntimeError("blijvend stuk")
+
+    for _ in range(notifier.ONCE_TRIES + 3):
+        try:
+            asyncio.run(notifier._once("test_once_broken", broken))
+        except RuntimeError:
+            pass
+    assert get_db().get_kv("test_once_broken") == "failed"
