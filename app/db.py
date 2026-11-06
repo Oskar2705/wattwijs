@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS push_sub (
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
 
+CREATE TABLE IF NOT EXISTS weather_day (
+    day TEXT PRIMARY KEY,           -- lokale datum
+    temp_mean REAL,                 -- gemiddelde buitentemperatuur (°C)
+    source TEXT
+);
+
 CREATE TABLE IF NOT EXISTS gas_period (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     start TEXT NOT NULL,            -- eerste dag (lokaal, JJJJ-MM-DD)
@@ -305,6 +311,19 @@ class DB:
 
     def delete_gas(self, gid: int) -> None:
         self.x("DELETE FROM gas_period WHERE id=?", (gid,))
+
+    def save_weather_days(self, rows: list[tuple[str, float]], source: str) -> None:
+        with self.lock:
+            self.conn.executemany(
+                "INSERT INTO weather_day(day, temp_mean, source) VALUES(?,?,?) "
+                "ON CONFLICT(day) DO UPDATE SET temp_mean=excluded.temp_mean, source=excluded.source",
+                [(d, t, source) for d, t in rows],
+            )
+            self.conn.commit()
+
+    def weather_days(self, start: str, end: str) -> dict[str, float]:
+        return {r["day"]: r["temp_mean"] for r in self.q(
+            "SELECT day, temp_mean FROM weather_day WHERE day BETWEEN ? AND ? AND temp_mean IS NOT NULL", (start, end))}
 
     def heating_days(self, start: str, end: str) -> list[dict[str, Any]]:
         """Per dag: stroom en warmte van de warmtepomp, gewogen aanvoertemperatuur, buiten- en

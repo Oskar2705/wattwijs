@@ -149,6 +149,7 @@ Zolang je saldeert (vóór `CONTRACT_START`) blijft het goedkoopste blok het hoo
 Op het tabblad Klimaat staat een weekoverzicht van de verwarming: de gemiddelde buitentemperatuur, het aantal graaddagen (per dag 18 graden min de gemiddelde buitentemperatuur), het stroomverbruik, de geleverde warmte en de COP van de warmtepomp, de gemiddelde aanvoertemperatuur en het gasverbruik. Stroom en gas staan ook per graaddag. Zo kun je weken met andere instellingen (stooklijn, eco-stand, slimme sturing) eerlijk vergelijken, ook als het de ene week kouder was. Per week kun je een notitie maken, bijvoorbeeld welke instelling er die week gold.
 
 - Warmte, aanvoer- en buitentemperatuur komen van de warmtepomp (nu de DeWarmte-koppeling) en worden per minuut opgeslagen.
+- Voor de graaddagen gebruikt de app met `LATITUDE`/`LONGITUDE` de gemiddelde buitentemperatuur per dag van Open-Meteo (tot 92 dagen terug). Zo rekent elke week met dezelfde bron, ook de weken van vóór het meten. Zonder locatie telt de sensor van de warmtepomp.
 - Gas lees je niet automatisch uit: vul het verbruik over een periode in, bijvoorbeeld wekelijks vanuit de app van je energieleverancier.
 - Gas gaat ook naar douchen en koken. Stel in hoeveel dat per dag is (in de app, of met `GAS_BASE_M3_PER_DAY`); dat deel wordt afgetrokken. Een goede schatting is je gemiddelde per dag in de zomer.
 

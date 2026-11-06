@@ -1497,6 +1497,9 @@ function renderHeatStats() {
     const inp = $("#hsTable td.note input");
     if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
   }
+  $("#hsTempSrc").textContent = d.temp_source === "open-meteo"
+    ? " De buitentemperatuur komt van Open-Meteo, zodat elke week met dezelfde bron wordt gerekend."
+    : " De buitentemperatuur komt van de sensor van de warmtepomp.";
   // gaslijst en basis
   $("#gasList").innerHTML = d.gas.slice(0, 8).map((g) =>
     `<li>${shortDay(g.start)} t/m ${shortDay(g.end)}: <strong>${n2(g.m3)} m³</strong><button type="button" data-id="${g.id}" aria-label="Verwijder">verwijder</button></li>`).join("");

@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import aircontimer, heating_stats, integrations, mailer, notifier, panels, prices, push, recorder
+from . import aircontimer, heating_stats, integrations, mailer, notifier, panels, prices, push, recorder, weather
 from .config import config
 from .db import ENERGY_COLS, consumption_wh, get_db, month_days, self_sufficiency
 from .state import state
@@ -96,6 +96,8 @@ def start_tasks() -> list[asyncio.Task]:
         tasks.append(aircontimer.run())
     if config.push_enabled:
         tasks.append(notifier.run())
+    if weather.enabled() and not config.demo:
+        tasks.append(weather.run())
     return [asyncio.create_task(t) for t in tasks]
 
 
@@ -426,6 +428,7 @@ def heatstats(weeks: int = 10) -> dict[str, Any]:
         "gas": get_db().gas_periods(limit=50),
         "gas_base_m3_day": heating_stats.gas_base_m3_day(),
         "base_temp": 18,
+        "temp_source": "open-meteo" if weather.enabled() else "warmtepomp",
     }
 
 

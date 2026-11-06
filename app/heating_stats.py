@@ -57,8 +57,19 @@ def _r(v: float | None, n: int = 1) -> float | None:
     return None if v is None else round(v, n)
 
 
+def day_temp(r: dict[str, Any], weather: dict[str, float], k: str) -> float | None:
+    """Buitentemperatuur van de dag: Open-Meteo als die er is (voor alle weken dezelfde bron),
+    anders de sensor van de warmtepomp als die genoeg van de dag gemeten heeft."""
+    if k in weather:
+        return float(weather[k])
+    if (r.get("outdoor_minutes") or 0) >= MIN_TEMP_MINUTES and r.get("outdoor_temp") is not None:
+        return float(r["outdoor_temp"])
+    return None
+
+
 def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float], today: date,
-                   base: float = 0.0) -> dict[str, Any]:
+                   base: float = 0.0, weather: dict[str, float] | None = None) -> dict[str, Any]:
+    weather = weather or {}
     by_day = {r["day"]: r for r in days}
     n_days = min(7, (today - start).days + 1)
     keys = [(start + timedelta(days=i)).isoformat() for i in range(n_days)]
@@ -69,6 +80,7 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
     hp_cost = 0.0
     priced = minutes = gas_days = temp_days = 0
     rooms: list[float] = []
+    temps: list[float] = []
     for k in keys:
         r = by_day.get(k) or {}
         h, q = float(r.get("hp_wh") or 0.0), float(r.get("heat_wh") or 0.0)
@@ -84,8 +96,10 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
         minutes += int(r.get("minutes") or 0)
         if r.get("room_temp") is not None:
             rooms.append(float(r["room_temp"]))
-        g = degree_days(r.get("outdoor_temp")) if (r.get("outdoor_minutes") or 0) >= MIN_TEMP_MINUTES else None
+        t = day_temp(r, weather, k)
+        g = degree_days(t)
         if g is not None:
+            temps.append(t)
             temp_days += 1
             gd += g
             gd_hp_wh += h
@@ -103,9 +117,7 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
         "temp_days": temp_days,
         "gas_days": gas_days,
         "degree_days": _r(gd) if temp_days else None,
-        "outdoor_temp": _r(sum(float(by_day[k]["outdoor_temp"]) for k in keys
-                               if k in by_day and by_day[k].get("outdoor_temp") is not None) / temp_days)
-        if temp_days else None,
+        "outdoor_temp": _r(sum(temps) / len(temps)) if temps else None,
         "hp_kwh": _r(hp_wh / 1000),
         "heat_kwh": _r(heat_wh / 1000) if heat_wh else None,
         "cop": _r(cop_heat_wh / cop_hp_wh, 2) if cop_hp_wh > 0 and cop_heat_wh > 0 else None,
@@ -127,11 +139,12 @@ def weeks(today: date, n: int = 10) -> list[dict[str, Any]]:
     days = db.heating_days(first.isoformat(), today.isoformat())
     gas = gas_per_day(db.gas_periods(limit=1000))
     base = gas_base_m3_day()
+    weather = db.weather_days(first.isoformat(), today.isoformat())
     out = []
     for i in range(n):
         s = first + timedelta(weeks=i)
         wd = [r for r in days if s.isoformat() <= r["day"] < (s + timedelta(days=7)).isoformat()]
         if not wd and not any(s.isoformat() <= k < (s + timedelta(days=7)).isoformat() for k in gas):
             continue
-        out.append(summarize_week(s, wd, gas, today, base))
+        out.append(summarize_week(s, wd, gas, today, base, weather))
     return list(reversed(out))

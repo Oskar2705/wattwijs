@@ -97,3 +97,30 @@ def test_api_gas_and_notes():
     assert any(g["id"] == gid for g in d["gas"]) and d["gas_base_m3_day"] == 0.6
     assert c.delete(f"/api/heatstats/gas/{gid}").status_code == 200
     get_db().set_kv("gas_base_m3_day", "")
+
+
+def test_weather_parse_and_preference():
+    from app import weather as W
+
+    times = [f"2041-01-0{d}T{h:02d}:00" for d in (1, 2, 3) for h in range(24)]
+    temps = [2.0 if h < 12 else 4.0 for d in (1, 2, 3) for h in range(24)]
+    temps[24:34] = [None] * 10  # 2 januari: te weinig uren
+    data = {"hourly": {"time": times, "temperature_2m": temps}}
+    assert W.parse_daily(data, date(2041, 1, 3)) == [("2041-01-01", 3.0), ("2041-01-03", 3.0)]
+    # Open-Meteo gaat voor de sensor; zonder Open-Meteo telt de sensor alleen bij genoeg metingen
+    r = {"outdoor_temp": 9.0, "outdoor_minutes": 1440}
+    assert H.day_temp(r, {"2041-01-01": 3.2}, "2041-01-01") == 3.2
+    assert H.day_temp(r, {}, "2041-01-01") == 9.0
+    assert H.day_temp({"outdoor_temp": 9.0, "outdoor_minutes": 100}, {}, "2041-01-01") is None
+
+
+def test_old_weeks_get_degree_days_from_weather():
+    mon = date(2041, 3, 4)
+    assert mon.weekday() == 0
+    for i in range(7):
+        _seed(mon + timedelta(days=i), outdoor=None, cop=0.0)  # oude data: geen sensor, geen warmte
+    get_db().save_weather_days([((mon + timedelta(days=i)).isoformat(), 6.0) for i in range(7)], "open-meteo")
+    w = H.weeks(mon + timedelta(days=6), n=1)[0]
+    assert w["degree_days"] == 84.0 and w["outdoor_temp"] == 6.0
+    assert w["hp_kwh_per_dd"] == pytest.approx(100.8 / 84, abs=0.01)
+    assert w["cop"] is None
