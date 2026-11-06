@@ -124,3 +124,26 @@ def test_old_weeks_get_degree_days_from_weather():
     assert w["degree_days"] == 84.0 and w["outdoor_temp"] == 6.0
     assert w["hp_kwh_per_dd"] == pytest.approx(100.8 / 84, abs=0.01)
     assert w["cop"] is None
+
+
+def test_cop_only_over_minutes_with_heat_measurement():
+    """Dag waarop de warmtemeting halverwege begint (zoals bij de update): COP mag niet zakken."""
+    d = date(2041, 5, 7)
+    start = int(datetime.combine(d, datetime.min.time(), tzinfo=config.tz).timestamp())
+    idx = {c: i for i, c in enumerate(MINUTE_COLS)}
+    rows = []
+    for m in range(1440):
+        r = [None] * len(MINUTE_COLS)
+        ts = start + m * 60
+        r[idx["ts"]], r[idx["day"]], r[idx["hour"]] = ts, d.isoformat(), datetime.fromtimestamp(ts, config.tz).hour
+        for c in ("import_wh", "export_wh", "solar_wh", "charge_wh", "discharge_wh", "house_wh", "aircon_wh", "heat_wh"):
+            r[idx[c]] = 0.0
+        r[idx["heatpump_wh"]] = 10.0  # hele dag 600 W
+        if m >= 1200:  # pas de laatste 4 uur warmte gemeten
+            r[idx["heat_wh"]] = 40.0
+            r[idx["supply_temp"]] = 38.0
+        rows.append(tuple(r))
+    get_db().write_minutes(rows)
+    w = H.weeks(d, n=1)[0]
+    assert w["cop"] == 4.0
+    assert w["hp_kwh"] == pytest.approx(14.4)

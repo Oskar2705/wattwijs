@@ -86,8 +86,8 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
         h, q = float(r.get("hp_wh") or 0.0), float(r.get("heat_wh") or 0.0)
         hp_wh += h
         heat_wh += q
-        if q > 0:  # COP alleen over dagen waarop de warmte gemeten is
-            cop_hp_wh += h
+        if q > 0:  # COP: warmte gedeeld door de stroom uit dezelfde minuten (niet die van de hele dag)
+            cop_hp_wh += float(r.get("hp_wh_measured") or 0.0)
             cop_heat_wh += q
             if r.get("supply_temp") is not None:
                 supply_w += float(r["supply_temp"]) * q

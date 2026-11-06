@@ -326,10 +326,14 @@ class DB:
             "SELECT day, temp_mean FROM weather_day WHERE day BETWEEN ? AND ? AND temp_mean IS NOT NULL", (start, end))}
 
     def heating_days(self, start: str, end: str) -> list[dict[str, Any]]:
-        """Per dag: stroom en warmte van de warmtepomp, gewogen aanvoertemperatuur, buiten- en
+        """Per dag: stroom en warmte van de warmtepomp (en de stroom uit minuten mét warmtemeting),
+        gewogen aanvoertemperatuur, buiten- en
         kamertemperatuur, en de stroomkosten van de warmtepomp tegen de kwartierprijzen."""
         return self.q(
             "SELECT m.day AS day, SUM(m.heatpump_wh) AS hp_wh, SUM(m.heat_wh) AS heat_wh, "
+            # stroom alleen uit minuten waarin de warmtepomp ook zijn warmte doorgaf (voor de COP);
+            # de aanvoertemperatuur komt uit dezelfde bron, dus die markeert zulke minuten
+            "SUM(CASE WHEN m.supply_temp IS NOT NULL THEN m.heatpump_wh END) AS hp_wh_measured, "
             "SUM(CASE WHEN m.heat_wh > 0 THEN m.supply_temp * m.heat_wh END) "
             "  / NULLIF(SUM(CASE WHEN m.heat_wh > 0 AND m.supply_temp IS NOT NULL THEN m.heat_wh END), 0) AS supply_temp, "
             "AVG(m.outdoor_temp) AS outdoor_temp, COUNT(m.outdoor_temp) AS outdoor_minutes, "
