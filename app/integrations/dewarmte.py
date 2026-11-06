@@ -43,6 +43,14 @@ def _num(v: Any) -> float | None:
         return None
 
 
+def _bool(v: Any) -> bool | None:
+    if isinstance(v, bool):
+        return v
+    if v in (None, ""):
+        return None
+    return str(v).strip().lower() in ("1", "true", "on", "yes")
+
+
 def parse_product(product: dict[str, Any]) -> dict[str, Any]:
     s = {**product, **(product.get("status") or {})}
     kw = _num(s.get("electricity_consumption"))
@@ -52,6 +60,10 @@ def parse_product(product: dict[str, Any]) -> dict[str, Any]:
         "heat_output_w": None if heat is None else heat * 1000.0,
         "supply_temperature": _num(s.get("supply_temperature")),
         "outdoor_temperature": _num(s.get("outdoor_temperature")),
+        # streefwaarde van het water (stooklijn, plus wat Smart correction erbij doet)
+        "target_supply_temperature": _num(s.get("target_temperature")),
+        "gas_boiler": _bool(s.get("gas_boiler")),  # hybride: springt de cv-ketel nu bij?
+        "thermostat_demand": _bool(s.get("thermostat")),
         "is_on": s.get("is_on"),
         "fault_code": s.get("fault_code"),
         "product_name": product.get("name"),

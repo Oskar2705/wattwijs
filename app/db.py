@@ -15,7 +15,8 @@ POWER_COLS = ["grid_w", "solar_w", "battery_w", "house_w", "heatpump_w", "soc", 
 # Verwarming: geleverde warmte (Wh, opgeteld) en temperaturen (gemiddeld per minuut).
 # Apart gehouden zodat bestaande rijen, de geschiedenis en de CSV-export niet veranderen.
 HEAT_ENERGY_COLS = ["heat_wh"]
-CLIMATE_COLS = ["supply_temp", "outdoor_temp", "room_temp"]
+CLIMATE_COLS = ["supply_temp", "outdoor_temp", "room_temp", "target_supply_temp", "boiler_on"]
+# boiler_on = deel van de minuut dat de cv-ketel bijsprong (0-1), zodat SUM/60 de uren geeft
 EXTRA_COLS = [*HEAT_ENERGY_COLS, *CLIMATE_COLS]
 MINUTE_COLS = ["ts", "day", "hour", *ENERGY_COLS, *POWER_COLS, *EXTRA_COLS]
 BASE_TEMP_C = 18.0  # graaddagen: per dag max(0, 18 - gemiddelde buitentemperatuur)
@@ -168,7 +169,7 @@ class DB:
         local = datetime.fromtimestamp(ts, config.tz)
         cols = MINUTE_COLS
         vals = [ts, local.date().isoformat(), local.hour]
-        vals += [round(energy.get(c, 0.0), 3) for c in [*ENERGY_COLS, *HEAT_ENERGY_COLS][: len(ENERGY_COLS)]]
+        vals += [round(energy.get(c, 0.0), 3) for c in ENERGY_COLS]
         vals += [None if power.get(c) is None else round(power[c], 1) for c in POWER_COLS]
         vals += [round(energy.get(c, 0.0), 3) for c in HEAT_ENERGY_COLS]
         vals += [None if power.get(c) is None else round(power[c], 1) for c in CLIMATE_COLS]
@@ -219,6 +220,23 @@ class DB:
             return {c: 0.0 for c in ENERGY_COLS}
         out = {k: (v or 0.0) for k, v in r[0].items() if k != "bucket"}
         return out
+
+    def solar_split(self, day: str) -> dict[str, float]:
+        """Waar de zonnestroom heen ging, per minuut bepaald en dan opgeteld.
+
+        Zonnestroom die niet naar het net ging, is op de plek gebleven: eerst de batterij in
+        (voor zover die laadde), de rest meteen het huis in. Laadde de batterij meer dan er
+        zon over was, dan kwam dat deel van het net. Per dag optellen zou dat door elkaar halen
+        (bijvoorbeeld 's nachts goedkoop laden van het net, overdag zon direct gebruiken)."""
+        r = self.q(
+            "SELECT SUM(MIN(charge_wh, MAX(solar_wh - export_wh, 0))) AS to_batt, "
+            "SUM(MAX(solar_wh - export_wh, 0) - MIN(charge_wh, MAX(solar_wh - export_wh, 0))) AS direct, "
+            "SUM(charge_wh - MIN(charge_wh, MAX(solar_wh - export_wh, 0))) AS grid_to_batt "
+            "FROM minute WHERE day=?",
+            (day,),
+        )[0]
+        return {"solar_direct_wh": r["direct"] or 0.0, "solar_to_batt_wh": r["to_batt"] or 0.0,
+                "grid_to_batt_wh": r["grid_to_batt"] or 0.0}
 
     def by_hour(self, day: str) -> list[dict[str, Any]]:
         return self._agg("m.hour", "m.day = :d", {"d": day})
@@ -361,6 +379,9 @@ class DB:
             "  / NULLIF(SUM(CASE WHEN m.heat_wh > 0 AND m.supply_temp IS NOT NULL THEN m.heat_wh END), 0) AS supply_temp, "
             "AVG(m.outdoor_temp) AS outdoor_temp, COUNT(m.outdoor_temp) AS outdoor_minutes, "
             "AVG(m.room_temp) AS room_temp, "
+            "SUM(CASE WHEN m.heat_wh > 0 THEN m.target_supply_temp * m.heat_wh END) "
+            "  / NULLIF(SUM(CASE WHEN m.heat_wh > 0 AND m.target_supply_temp IS NOT NULL THEN m.heat_wh END), 0) AS target_supply_temp, "
+            "SUM(m.boiler_on) / 60.0 AS boiler_h, COUNT(m.boiler_on) AS boiler_minutes, "
             "SUM(m.heatpump_wh * p.all_in) / 1000 AS hp_cost, COUNT(p.ts) AS priced_minutes, COUNT(*) AS minutes "
             "FROM minute m LEFT JOIN price p ON p.ts = m.ts - (m.ts % 900) "
             "WHERE m.day BETWEEN ? AND ? GROUP BY m.day ORDER BY m.day",

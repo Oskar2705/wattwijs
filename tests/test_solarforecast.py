@@ -96,21 +96,45 @@ def test_outlook_sun_hours_and_yield(monkeypatch):
     assert notifier.hm(o["block"]["start"]) == "11:00"
 
 
-def test_morning_message_with_sun():
+def test_morning_message_with_sun(monkeypatch):
+    monkeypatch.setattr(config, "contract_start", "2033-01-01")
     d = date(2033, 4, 2)
     start = int(datetime.combine(d, datetime.min.time(), tzinfo=config.tz).timestamp())
     get_db().save_prices([(start + q * 900, d.isoformat(), 0.02 if 76 <= q < 84 else 0.10,
                            0.15 if 76 <= q < 84 else 0.23) for q in range(96)])
     now = datetime.combine(d, datetime.min.time(), tzinfo=config.tz).replace(hour=7, minute=30)
     blk = {"start": start + 11 * 3600, "end": start + 13 * 3600, "surplus_w": 1800, "solar_w": 2200}
-    title, body = notifier.build_morning(now, {"sun_hours": 0.4, "solar_kwh": 9.2, "block": blk})
-    assert title == "Vandaag nauwelijks zon en ongeveer 9,2 kWh zonnestroom"
-    assert "Meeste stroom over tussen 11:00 en 13:00: zo'n 1,8 kW boven het gewone verbruik." in body
+    win = {"start": start + 10 * 3600, "end": start + 15 * 3600}
+    title, body = notifier.build_morning(now, {"sun_hours": 3.2, "sun_window": win, "solar_kwh": 9.2, "block": blk})
+    assert title == "☀️ Vandaag zo'n 3 uur zon (ongeveer 9,2 kWh)"
+    assert body.startswith("De zon schijnt vooral tussen 10:00 en 15:00.")
+    assert "Tussen 11:00 en 13:00 blijft er stroom over (tot 1,8 kW)." in body
     assert "warmtepomp een graadje hoger" in body  # april: stookseizoen
-    assert "Goedkoopste stroom: 19:00–21:00" in body
+    assert "goedkoopst tussen 19:00 en 21:00" in body
+    # grijze dag
+    title, body = notifier.build_morning(now, {"sun_hours": 0.4, "sun_window": None, "solar_kwh": 0.8, "block": None})
+    assert title == "☁️ Vandaag nauwelijks zon (ongeveer 0,8 kWh)"
     # zonder eigen geschiedenis: alleen de zonuren
     title, _ = notifier.build_morning(now, {"sun_hours": 6.6, "solar_kwh": None, "block": None})
-    assert title == "Vandaag zo'n 7 uur zon"
-    # geen zonverwachting: zoals altijd
+    assert title == "☀️ Vandaag zo'n 7 uur zon"
+    # geen zonverwachting: op prijs
     title, _ = notifier.build_morning(now, None)
     assert title == "Vandaag het goedkoopst: 19:00–21:00"
+    # tijdens salderen zonder zon en zonder meldingen: geen bericht
+    monkeypatch.setattr(config, "contract_start", "2034-01-01")
+    get_db().x("DELETE FROM panel_alert")
+    assert notifier.build_morning(now, None) is None
+
+
+def test_sun_window():
+    d0 = 1_000_000 * 3600
+    sun = {d0 + h * 3600: (3600.0 if h in (10, 11, 14) else 300.0) for h in range(24)}
+    w = S.sun_window(sun, d0, d0 + 86400)
+    assert (w["start"] - d0) // 3600 == 10 and (w["end"] - d0) // 3600 == 15
+    assert S.sun_window({}, d0, d0 + 86400) is None
+
+
+def test_share_text():
+    assert notifier.share_text(34) == "een derde"
+    assert notifier.share_text(50) == "de helft"
+    assert notifier.share_text(44) == "44%"

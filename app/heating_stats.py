@@ -98,6 +98,8 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
     temps: list[float] = []
     sources: set[str] = set()
     backup = 0.0
+    boiler_h, boiler_min, target_w = 0.0, 0, 0.0
+    supply_q = target_q = 0.0  # gewicht: Wattwijs' eigen warmtemeting op dagen mét die temperatuur
     for k in keys:
         r = by_day.get(k) or {}
         if not r and k not in portal:
@@ -111,14 +113,25 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
         if q > 0:  # COP: warmte gedeeld door de stroom uit dezelfde minuten (niet die van de hele dag)
             cop_hp_wh += h_measured
             cop_heat_wh += q
-            if r.get("supply_temp") is not None:
-                supply_w += float(r["supply_temp"]) * q
+        # Temperaturen komen uit Wattwijs' minuten (gewogen naar de warmte van die minuten), dus
+        # ook hier wegen met die eigen warmte, alleen over dagen waarop ze gemeten zijn.
+        own_q = float(r.get("heat_wh") or 0.0)
+        if own_q > 0 and r.get("supply_temp") is not None:
+            supply_w += float(r["supply_temp"]) * own_q
+            supply_q += own_q
+        if own_q > 0 and r.get("target_supply_temp") is not None:
+            target_w += float(r["target_supply_temp"]) * own_q
+            target_q += own_q
+        boiler_h += float(r.get("boiler_h") or 0.0)
+        boiler_min += int(r.get("boiler_minutes") or 0)
         hp_cost += float(r.get("hp_cost") or 0.0)
         priced += int(r.get("priced_minutes") or 0)
         minutes += int(r.get("minutes") or 0)
         if r.get("room_temp") is not None:
             rooms.append(float(r["room_temp"]))
-        t = day_temp(r, weather, k)
+        # Vandaag telt niet mee voor graaddagen: de temperatuur geldt voor de hele dag, het
+        # verbruik pas tot nu. Anders lijkt de lopende week per graaddag te zuinig.
+        t = day_temp(r, weather, k) if k < today.isoformat() else None
         g = degree_days(t)
         if g is not None:
             temps.append(t)
@@ -143,7 +156,9 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
         "hp_kwh": _r(hp_wh / 1000),
         "heat_kwh": _r(heat_wh / 1000) if heat_wh else None,
         "cop": _r(cop_heat_wh / cop_hp_wh, 2) if cop_hp_wh > 0 and cop_heat_wh > 0 else None,
-        "supply_temp": _r(supply_w / cop_heat_wh) if cop_heat_wh > 0 and supply_w > 0 else None,
+        "supply_temp": _r(supply_w / supply_q) if supply_q > 0 else None,
+        "target_supply_temp": _r(target_w / target_q) if target_q > 0 else None,
+        "boiler_h": _r(boiler_h) if boiler_min else None,  # None = nog niet gemeten (vóór deze versie)
         "room_temp": _r(sum(rooms) / len(rooms)) if rooms else None,
         "gas_m3": _r(gas_m3, 2) if gas_days else None,
         "gas_heating_m3": _r(max(gas_m3 - base * gas_days, 0.0), 2) if gas_days else None,

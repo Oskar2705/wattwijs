@@ -1478,8 +1478,10 @@ function renderHeatStats() {
     ["Gas per graaddag", (w) => (w.gas_m3_per_dd == null ? "–" : `${nl2.format(w.gas_m3_per_dd)} m³`)],
     ["Warmtepomp", (w) => (w.hp_kwh == null ? "–" : `${n1(w.hp_kwh)} kWh`)],
     ["Gas", (w) => (w.gas_heating_m3 == null ? "–" : `${n1(w.gas_heating_m3)} m³` + (w.gas_days < w.days ? "*" : ""))],
+    ["Ketel bij", (w) => (w.boiler_h == null ? "–" : `${n1(w.boiler_h)} uur`)],
     ["COP", (w) => n1(w.cop)],
     ["Aanvoer", (w) => (w.supply_temp == null ? "–" : `${nl0.format(w.supply_temp)}°`)],
+    ["Streef", (w) => (w.target_supply_temp == null ? "–" : `${nl0.format(w.target_supply_temp)}°`)],
     ["Graaddagen", (w) => n1(w.degree_days)],
   ];
   const nowStart = (() => { const t = new Date(); t.setDate(t.getDate() - ((t.getDay() + 6) % 7)); return localDate(t); })();

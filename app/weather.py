@@ -41,6 +41,12 @@ def parse_daily(data: dict[str, Any], today: date) -> list[tuple[str, float]]:
             if d <= today.isoformat() and len(vs) >= 20]
 
 
+def today_temp() -> float | None:
+    """Gemiddelde buitentemperatuur van vandaag (deels verwachting), of None."""
+    d = datetime.now(config.tz).date().isoformat()
+    return get_db().weather_days(d, d).get(d)
+
+
 async def fetch(session: aiohttp.ClientSession) -> dict[str, Any]:
     params = {
         "latitude": f"{config.latitude:.4f}",

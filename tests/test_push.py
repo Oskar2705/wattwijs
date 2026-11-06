@@ -109,20 +109,26 @@ def _seed_prices(d: date):
     get_db().save_prices(rows)
 
 
-def test_morning_message():
+def test_morning_message(monkeypatch):
     d = date(2030, 3, 10)
     _seed_day(d - timedelta(days=1))
     _seed_prices(d)
     get_db().x("INSERT INTO panel_alert(serial,name,opened_day,deviation,mail_status) VALUES('X','1.1.4','2030-03-01',-97,'x')")
     now = datetime.combine(d, datetime.min.time(), tzinfo=config.tz).replace(hour=7, minute=30)
-    title, body = notifier.build_morning(now)  # zonder zonverwachting: zoals vroeger, op prijs
-    assert title == "Vandaag het goedkoopst: 13:00–15:00"
-    assert "Goedkoopste stroom: 13:00–15:00" in body and "Duurst rond 18:00" in body
-    assert "Tussen 14:00 en 15:00 is de prijs negatief" in body
+    # salderen: geen prijstips
+    monkeypatch.setattr(config, "contract_start", "2031-01-01")
+    title, body = notifier.build_morning(now)
+    assert title == "Goedemorgen" and "cent" not in body
     assert "Zonnepaneel 1.1.4 doet het nog steeds niet goed" in body
+    # dynamisch contract: wel prijzen
+    monkeypatch.setattr(config, "contract_start", "2030-01-01")
+    title, body = notifier.build_morning(now)  # zonder zonverwachting: op prijs
+    assert title == "Vandaag het goedkoopst: 13:00–15:00"
+    assert "goedkoopst tussen 13:00 en 15:00" in body and "duurst is het rond 18:00" in body
+    assert "Tussen 14:00 en 15:00 is de prijs negatief" in body
     title, body = notifier.build_morning(now, {"sun_hours": 4.2, "solar_kwh": 6.3, "block": None})
-    assert title == "Vandaag zo'n 4 uur zon en ongeveer 6,3 kWh zonnestroom"
-    assert "Gisteren was het 8,4 kWh." in body and "weinig zonnestroom over" in body
+    assert title == "☀️ Vandaag zo'n 4 uur zon (ongeveer 6,3 kWh)"
+    assert "weinig zonnestroom over" in body
     get_db().x("DELETE FROM panel_alert WHERE serial='X'")
 
 
@@ -135,8 +141,9 @@ def test_evening_record_and_weekly():
     get_db().set_kv(f"solar_expected_{rec.isoformat()}", "11.0")
     title, body = notifier.build_evening(rec)
     assert title.startswith("Vandaag") and "eigen stroom" in title
-    assert "Opgewekt: 12,6 kWh (verwacht was 11,0 kWh)." in body
-    assert "Verbruikt:" in body and "% van eigen panelen" in body
+    assert "De panelen wekten 12,6 kWh op, meer dan de 11,0 kWh die vanochtend verwacht werd." in body
+    assert "Het huis gebruikte" in body and "meteen het huis in" in body and "kwam van het net" in body
+    assert "Stroom vandaag" not in body  # geen contract ingesteld: geen bedragen
     assert "Nieuw record" in body
     assert notifier.build_evening(d0 + timedelta(days=5))[1].count("Nieuw record") == 0
     sunday = date(2031, 5, 18)
@@ -145,3 +152,42 @@ def test_evening_record_and_weekly():
     assert title.startswith("📊") and "Zonnigste dag:" in body
     assert "Ongeveer evenveel zon als vorige week." in body
     assert notifier.build_weekly(date(2031, 5, 25)) is None  # maar 3 dagen gemeten
+
+
+def test_evening_battery_split_and_price_coverage(monkeypatch):
+    """Batterij laadt 's nachts van het net en overdag met zon: per minuut uit elkaar houden.
+    Bedragen alleen als (vrijwel) de hele dag een prijs heeft."""
+    d = date(2031, 6, 3)
+    start = int(datetime.combine(d, datetime.min.time(), tzinfo=config.tz).timestamp())
+    rows = []
+    for m in range(1440):
+        ts = start + m * 60
+        hr = datetime.fromtimestamp(ts, config.tz).hour
+        if 2 <= hr < 4:      # nacht: 1,2 kW van het net de batterij in, huis 0,3 kW
+            imp, exp, sun, chg, dis, house = 25.0, 0.0, 0.0, 20.0, 0.0, 5.0
+        elif 10 <= hr < 14:  # middag: 3 kW zon, 1,2 kW de batterij in, 0,6 kW naar het net
+            imp, exp, sun, chg, dis, house = 0.0, 10.0, 50.0, 20.0, 0.0, 20.0
+        elif 18 <= hr < 22:  # avond: batterij levert
+            imp, exp, sun, chg, dis, house = 0.0, 0.0, 0.0, 0.0, 15.0, 15.0
+        else:
+            imp, exp, sun, chg, dis, house = 5.0, 0.0, 0.0, 0.0, 0.0, 5.0
+        rows.append((ts, d.isoformat(), hr, imp, exp, sun, chg, dis, 0.0, house, 0.0,
+                     None, None, None, None, None, None, None))
+    get_db().write_minutes(rows)
+    s = get_db().solar_split(d.isoformat())
+    assert s["solar_to_batt_wh"] == pytest.approx(4 * 60 * 20)      # 4,8 kWh zon de batterij in
+    assert s["grid_to_batt_wh"] == pytest.approx(2 * 60 * 20)       # 2,4 kWh net de batterij in
+    assert s["solar_direct_wh"] == pytest.approx(4 * 60 * 20)       # 4,8 kWh zon direct
+    monkeypatch.setattr(config, "contract_start", "2031-01-01")
+    _, body = notifier.build_evening(d)
+    assert "4,8 kWh meteen het huis in, 4,8 kWh de batterij in" in body
+    assert "De batterij laadde 2,4 kWh van het net bij." in body.replace("Daarnaast laadde", "De batterij laadde") \
+        or "Daarnaast laadde de batterij 2,4 kWh van het net bij." in body
+    assert "€" not in body  # geen prijzen voor deze dag
+    # maar een paar kwartieren met prijs: nog steeds geen bedragen (zou te laag uitvallen)
+    get_db().save_prices([(start + q * 900, d.isoformat(), 0.1, 0.25) for q in range(10)])
+    _, body = notifier.build_evening(d)
+    assert "€" not in body
+    get_db().save_prices([(start + q * 900, d.isoformat(), 0.1, 0.25) for q in range(96)])
+    _, body = notifier.build_evening(d)
+    assert "Stroom vandaag: €" in body

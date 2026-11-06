@@ -171,11 +171,11 @@ Push needs **HTTPS**. The easiest way is `tailscale serve --bg --https=8443 http
 
 | Type | When |
 |---|---|
-| Morning | `PUSH_MORNING_TIME`: with `LATITUDE`/`LONGITUDE` the expected sun hours and solar yield for today and the block with the largest surplus (see below); the cheapest `PUSH_BLOCK_HOURS`-hour block within `PUSH_BLOCK_WINDOW`, the most expensive moment, negative prices, and a panel that is still broken |
+| Morning | `PUSH_MORNING_TIME`: with `LATITUDE`/`LONGITUDE` the expected sun hours and solar yield for today, between which hours the sun shines, and the block with the largest surplus (see below); from `CONTRACT_START` also the cheapest `PUSH_BLOCK_HOURS`-hour block within `PUSH_BLOCK_WINDOW`, the most expensive moment, negative prices, and a panel that is still broken |
 | Solar panel | right after the evening check, when a panel breaks or recovers |
 | Negative price | around 13:00, when tomorrow has negative prices |
 | Export | from `CONTRACT_START`: the house has exported more than `PUSH_EXPORT_W` for `PUSH_EXPORT_MINUTES` (and the battery is full). In the heating season it suggests turning the heating up a degree, with a reminder at `PUSH_HEAT_BACK_TIME` |
-| Evening summary | `PUSH_EVENING_TIME` (default 21:00): today's yield (against the morning forecast), use and the share of your own power, the heat pump and air conditioners, export and import, the cost so far, and a production record or milestone when there is one |
+| Evening summary | `PUSH_EVENING_TIME` (default 21:00), as a short story: today's yield (against the morning forecast), use including the heat pump and air conditioners, where the solar power went (house, battery, grid), from `CONTRACT_START` the cost, and a production record or milestone when there is one |
 | Weekly summary | Sunday at `PUSH_WEEKLY_TIME` |
 | Technical | a device has been silent for `OFFLINE_ALERT_MINUTES` (off by default) |
 

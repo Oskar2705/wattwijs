@@ -193,6 +193,12 @@ def _window(now: datetime) -> tuple[int, int]:
     return w_start, w_end
 
 
+def sun_window(sun: dict[int, float], d0: int, d1: int, min_s: float = 900) -> dict[str, int] | None:
+    """Van het eerste tot het laatste uur met minstens een kwartier zon, of None."""
+    hours = sorted(t for t, v in sun.items() if d0 <= t < d1 and v >= min_s)
+    return {"start": hours[0], "end": hours[-1] + HOUR} if hours else None
+
+
 def outlook(data: dict[str, dict[int, float]], now: datetime) -> dict[str, Any]:
     """Verwachting voor vandaag: zonuren, opwek (kWh) en het blok met het meeste overschot.
 
@@ -203,6 +209,7 @@ def outlook(data: dict[str, dict[int, float]], now: datetime) -> dict[str, Any]:
     d1 = d0 + 24 * HOUR  # (op de dagen van de zomertijdwissel klopt dat op een uur na; geen bezwaar)
     out: dict[str, Any] = {
         "sun_hours": round(sum(v for t, v in sun.items() if d0 <= t < d1) / 3600, 1) if sun else None,
+        "sun_window": sun_window(sun, d0, d1),
         "solar_kwh": None,
         "block": None,
     }

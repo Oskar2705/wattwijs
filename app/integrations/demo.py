@@ -160,6 +160,8 @@ def backfill_history(days: int = 45) -> None:
             "supply_temp": 40.0 - 0.6 * outdoor(t) if v["hp"] > 100 else None,
             "outdoor_temp": outdoor(t),
             "room_temp": 19.5 + random.Random(ts // 3600).uniform(-0.4, 0.4),
+            "target_supply_temp": 35 + (15 - outdoor(t)) * 0.8 if v["hp"] > 100 else None,
+            "boiler_on": 1.0 if outdoor(t) < 1.0 and v["hp"] > 100 else 0.0,
         }
         acc.add(snap, 60)
         p = acc.power()

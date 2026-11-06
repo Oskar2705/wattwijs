@@ -641,7 +641,9 @@ def export_csv(start: str, end: str) -> Response:
         cost = r["cost_import"] if priced else None
         rev = r["revenue_export"] if priced else None
         net = None if cost is None else cost - (rev or 0)
-        w.writerow([r["day"], r["hour"], *[nl((r[c] or 0) / 1000, 3) for c in ENERGY_COLS], nl(cost, 4), nl(rev, 4), nl(net, 4)])
+        vals = {c: (r[c] or 0.0) for c in ENERGY_COLS}
+        vals["house_wh"] = consumption_wh(vals)  # zelfde verbruik als in de app
+        w.writerow([r["day"], r["hour"], *[nl(vals[c] / 1000, 3) for c in ENERGY_COLS], nl(cost, 4), nl(rev, 4), nl(net, 4)])
     return Response(
         buf.getvalue(),
         media_type="text/csv",

@@ -133,6 +133,8 @@ class LiveState:
             "heat_w": _r(heat),
             "supply_temp": _r(self.heatpump.get("supply_temperature", now)),
             "outdoor_temp": _r(self.heatpump.get("outdoor_temperature", now)),
+            "target_supply_temp": _r(self.heatpump.get("target_supply_temperature", now)),
+            "boiler_on": _flag(self.heatpump.get("gas_boiler", now)),
             "room_temp": _r(sum(rooms) / len(rooms)) if rooms else None,
             "aircon_configured": self.aircon.configured,
             "aircon_on": self.aircon.get("units_on", now),
@@ -143,9 +145,15 @@ class LiveState:
             ],
             "heatpump": {
                 k: self.heatpump.get(k, now)
-                for k in ("heat_output_w", "supply_temperature", "outdoor_temperature", "is_on", "fault_code")
+                for k in ("heat_output_w", "supply_temperature", "outdoor_temperature", "target_supply_temperature",
+                          "gas_boiler", "thermostat_demand", "is_on", "fault_code")
             },
         }
+
+
+def _flag(v: bool | None) -> float | None:
+    """aan/uit als 1.0/0.0, zodat het gemiddelde per minuut het deel van de minuut is."""
+    return None if v is None else (1.0 if v else 0.0)
 
 
 def _r(v: float | None) -> float | None:

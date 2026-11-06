@@ -169,11 +169,11 @@ Pushmeldingen hebben **https** nodig. Het makkelijkst is `tailscale serve --bg -
 
 | Soort | Wanneer |
 |---|---|
-| Ochtend | `PUSH_MORNING_TIME`: met `LATITUDE`/`LONGITUDE` de verwachte zonuren en opwek van vandaag en het blok met het grootste overschot (zie hieronder); het goedkoopste blok van `PUSH_BLOCK_HOURS` uur binnen `PUSH_BLOCK_WINDOW`, het duurste moment, negatieve prijzen, en een paneel dat nog stuk is |
+| Ochtend | `PUSH_MORNING_TIME`: met `LATITUDE`/`LONGITUDE` de verwachte zonuren en opwek van vandaag, tussen welke uren de zon schijnt en het blok met het grootste overschot (zie hieronder); vanaf `CONTRACT_START` ook het goedkoopste blok van `PUSH_BLOCK_HOURS` uur binnen `PUSH_BLOCK_WINDOW`, het duurste moment, negatieve prijzen, en een paneel dat nog stuk is |
 | Zonnepaneel | direct na de avondcontrole, als een paneel kapot gaat of weer werkt |
 | Negatieve prijs | rond 13:00, als morgen de prijs negatief wordt |
 | Teruglevering | vanaf `CONTRACT_START`: het huis levert al `PUSH_EXPORT_MINUTES` minuten meer dan `PUSH_EXPORT_W` terug (en de batterij is vol). In het stookseizoen met de tip om de verwarming een graad hoger te zetten, en een herinnering om `PUSH_HEAT_BACK_TIME` |
-| Avondoverzicht | `PUSH_EVENING_TIME` (standaard 21:00): de opwek van vandaag (tegenover de verwachting van de ochtend), het verbruik en het deel eigen stroom, de warmtepomp en airco's, teruglevering en afname, de kosten tot nu, en een opwekrecord of mijlpaal als die er is |
+| Avondoverzicht | `PUSH_EVENING_TIME` (standaard 21:00), als kort verhaal: de opwek van vandaag (tegenover de verwachting van de ochtend), het verbruik met de warmtepomp en airco's, waar de zonnestroom heen ging (huis, batterij, net), vanaf `CONTRACT_START` de kosten, en een opwekrecord of mijlpaal als die er is |
 | Weekoverzicht | zondag om `PUSH_WEEKLY_TIME` |
 | Technisch | een apparaat geeft al `OFFLINE_ALERT_MINUTES` minuten niets door (staat standaard uit) |
 
