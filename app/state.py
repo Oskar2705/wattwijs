@@ -109,6 +109,9 @@ class LiveState:
             house_net = grid + (se or 0.0) + batt_ac
             house = max(house_net, 0.0)
 
+        heat = self.heatpump.get("heat_output_w", now)
+        rooms = [r.get("room_temp") for r in (self.heating.get("rooms", now) or []) if r.get("room_temp") is not None]
+
         other = None
         if house is not None and hp is not None:
             other = max(house - hp - (ac or 0.0), 0.0)
@@ -127,6 +130,10 @@ class LiveState:
             "heatpump_w": _r(hp),
             "other_w": _r(other),
             "aircon_w": _r(ac),
+            "heat_w": _r(heat),
+            "supply_temp": _r(self.heatpump.get("supply_temperature", now)),
+            "outdoor_temp": _r(self.heatpump.get("outdoor_temperature", now)),
+            "room_temp": _r(sum(rooms) / len(rooms)) if rooms else None,
             "aircon_configured": self.aircon.configured,
             "aircon_on": self.aircon.get("units_on", now),
             "heating_configured": self.heating.configured,

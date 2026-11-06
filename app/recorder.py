@@ -7,7 +7,7 @@ import logging
 import time
 from typing import Any
 
-from .db import ENERGY_COLS, POWER_COLS, get_db
+from .db import CLIMATE_COLS, ENERGY_COLS, HEAT_ENERGY_COLS, POWER_COLS, get_db
 from .state import state
 
 log = logging.getLogger(__name__)
@@ -18,9 +18,9 @@ MAX_DT_S = 30.0  # gaten langer dan dit tellen niet mee
 class MinuteAccumulator:
     def __init__(self, minute_ts: int) -> None:
         self.minute_ts = minute_ts
-        self.energy = {c: 0.0 for c in ENERGY_COLS}
-        self._wsum: dict[str, float] = {c: 0.0 for c in POWER_COLS}
-        self._tsum: dict[str, float] = {c: 0.0 for c in POWER_COLS}
+        self.energy = {c: 0.0 for c in [*ENERGY_COLS, *HEAT_ENERGY_COLS]}
+        self._wsum: dict[str, float] = {c: 0.0 for c in [*POWER_COLS, *CLIMATE_COLS]}
+        self._tsum: dict[str, float] = {c: 0.0 for c in [*POWER_COLS, *CLIMATE_COLS]}
         self.soc: float | None = None
 
     def add(self, snap: dict[str, Any], dt: float) -> None:
@@ -46,7 +46,10 @@ class MinuteAccumulator:
         house = snap.get("house_net_w", snap.get("house_w"))
         if house is not None:
             self.energy["house_wh"] += house * h
-        for c in POWER_COLS:
+        heat = snap.get("heat_w")
+        if heat is not None:
+            self.energy["heat_wh"] += max(heat, 0.0) * h
+        for c in [*POWER_COLS, *CLIMATE_COLS]:
             if c == "soc":
                 continue
             v = snap.get(c)
@@ -58,7 +61,8 @@ class MinuteAccumulator:
 
     def power(self) -> dict[str, float | None]:
         out: dict[str, float | None] = {
-            c: (self._wsum[c] / self._tsum[c] if self._tsum[c] > 0 else None) for c in POWER_COLS if c != "soc"
+            c: (self._wsum[c] / self._tsum[c] if self._tsum[c] > 0 else None)
+            for c in [*POWER_COLS, *CLIMATE_COLS] if c != "soc"
         }
         out["soc"] = self.soc
         return out

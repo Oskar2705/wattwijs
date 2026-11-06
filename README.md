@@ -146,6 +146,14 @@ Set `LATITUDE` and `LONGITUDE` (the home, in decimal degrees) and the morning ti
 
 While net metering applies (before `CONTRACT_START`) the cheapest block stays the main advice and the sunny block is an extra line, because exported power is then credited at the same price. From `CONTRACT_START` the sunny block comes first and the cheapest block is the fallback. The app needs a few sunny days of history before it gives a sun tip.
 
+## Heating per week
+
+The Climate tab has a weekly heating overview: average outdoor temperature, degree days (per day 18 degrees minus the average outdoor temperature), electricity use, heat delivered and COP of the heat pump, average supply temperature and gas use. Electricity and gas are also shown per degree day, so weeks with different settings (heat curve, eco mode, smart control) can be compared fairly, even when one week was colder. You can add a note per week, for example which setting applied.
+
+- Heat, supply and outdoor temperature come from the heat pump (currently the DeWarmte integration) and are stored per minute.
+- Gas is not read automatically: enter the usage over a period, for example weekly from your energy supplier's app.
+- Gas also goes to showering and cooking. Set how much that is per day (in the app, or with `GAS_BASE_M3_PER_DAY`); that part is subtracted. A good estimate is your average per day in summer.
+
 ## Home screen app and push notifications
 
 The app is a Progressive Web App: it has its own icon, runs without browser bars and can send push notifications. You don't need an App Store app.

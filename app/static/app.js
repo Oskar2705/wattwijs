@@ -262,7 +262,7 @@ function renderLive(d) {
     flow.classList.toggle("no-ac", !hasAc);
     flow.setAttribute("viewBox", hasAc ? "0 0 380 372" : "0 0 380 330");
   }
-  $("#acTab").hidden = !(hasAc || n.heating_configured);
+  $("#acTab").hidden = !(hasAc || n.heating_configured || n.heatpump_w != null);
   if (hasAc !== curveHasAc && curveData) drawCurve();
   $(".tabs").classList.toggle("five", hasAc);
   if (hasAc) {
@@ -1021,6 +1021,8 @@ async function loadAircon() {
 function loadClimate() {
   loadAircon().catch(showAcError);
   loadHeating().catch(showHeatError);
+  // weekoverzicht: hooguit eens per 5 minuten opnieuw (de rest van Klimaat ververst elke 10 s)
+  if (!hs.editing && Date.now() - hs.loadedAt > 300000) loadHeatStats().catch(() => {});
 }
 function showAcError(e) {
   const box = $("#acError");
@@ -1453,6 +1455,140 @@ function initHeating() {
 }
 
 /* ================= navigatie ================= */
+/* ================= verwarming per week ================= */
+const hs = { data: null, editing: null, loadedAt: 0 };
+const n1 = (v) => (v == null ? "–" : nl1.format(v));
+const n2 = (v) => (v == null ? "–" : nl2.format(v));
+const shortDay = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+
+async function loadHeatStats() {
+  hs.data = await getJSON("/api/heatstats");
+  hs.loadedAt = Date.now();
+  $("#hsWrap").hidden = !(hs.data.weeks.length || (live && live.heatpump_w != null));
+  renderHeatStats();
+}
+
+function renderHeatStats() {
+  const d = hs.data;
+  if (!d) return;
+  // Belangrijkste eerst (op een telefoon past maar een deel; de rest is opzij te schuiven)
+  const cols = [
+    ["Buiten", (w) => (w.outdoor_temp == null ? "–" : `${n1(w.outdoor_temp)}°`)],
+    ["Stroom per graaddag", (w) => (w.hp_kwh_per_dd == null ? "–" : `${n2(w.hp_kwh_per_dd)} kWh`)],
+    ["Gas per graaddag", (w) => (w.gas_m3_per_dd == null ? "–" : `${nl2.format(w.gas_m3_per_dd)} m³`)],
+    ["Warmtepomp", (w) => (w.hp_kwh == null ? "–" : `${n1(w.hp_kwh)} kWh`)],
+    ["Gas", (w) => (w.gas_heating_m3 == null ? "–" : `${n1(w.gas_heating_m3)} m³` + (w.gas_days < w.days ? "*" : ""))],
+    ["COP", (w) => n1(w.cop)],
+    ["Aanvoer", (w) => (w.supply_temp == null ? "–" : `${nl0.format(w.supply_temp)}°`)],
+    ["Graaddagen", (w) => n1(w.degree_days)],
+  ];
+  const nowStart = (() => { const t = new Date(); t.setDate(t.getDate() - ((t.getDay() + 6) % 7)); return localDate(t); })();
+  if (!d.weeks.length) {
+    $("#hsTable").innerHTML = `<p class="hint">Nog geen gegevens. Vanaf nu wordt elke minuut bijgehouden wat de warmtepomp doet.</p>`;
+  } else {
+    $("#hsTable").innerHTML = `<table><thead><tr><th>Week van</th>${cols.map(([l]) => `<th>${l}</th>`).join("")}<th>Notitie</th></tr></thead><tbody>` +
+      d.weeks.map((w) => `<tr class="${w.week_start === nowStart ? "now" : ""}"><td>${shortDay(w.week_start)}</td>` +
+        cols.map(([, f]) => `<td>${f(w)}</td>`).join("") +
+        `<td class="note" data-week="${w.week_start}">${hs.editing === w.week_start
+          ? `<input type="text" maxlength="200" value="${esc(w.note)}" placeholder="bijv. stooklijn 55/35, eco aan">`
+          : `<button type="button">${w.note ? esc(w.note) : "+ notitie"}</button>`}</td></tr>`).join("") +
+      `</tbody></table>` +
+      (d.weeks.some((w) => w.gas_days && w.gas_days < w.days) ? `<p class="hint">* Gas niet voor alle dagen van die week ingevuld.</p>` : "");
+    const inp = $("#hsTable td.note input");
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }
+  // gaslijst en basis
+  $("#gasList").innerHTML = d.gas.slice(0, 8).map((g) =>
+    `<li>${shortDay(g.start)} t/m ${shortDay(g.end)}: <strong>${n2(g.m3)} m³</strong><button type="button" data-id="${g.id}" aria-label="Verwijder">verwijder</button></li>`).join("");
+  const base = $("#gasBaseForm input");
+  if (document.activeElement !== base) base.value = d.gas_base_m3_day ? nl2.format(d.gas_base_m3_day) : "";
+}
+
+async function saveNote(week, text) {
+  hs.editing = null;
+  try {
+    await postJSON("/api/heatstats/note", { week_start: week, text });
+    const w = hs.data.weeks.find((x) => x.week_start === week);
+    if (w) w.note = text.trim();
+  } catch (e) {
+    gasMsg(`Notitie opslaan lukte niet: ${e.message || e}`, true);
+  }
+  renderHeatStats();
+}
+
+function gasMsg(text, err = false) {
+  const m = $("#gasMsg");
+  m.textContent = text;
+  m.classList.toggle("err", err);
+}
+
+function lastWeekRange() {
+  const t = new Date();
+  const mon = new Date(t); mon.setDate(t.getDate() - ((t.getDay() + 6) % 7) - 7);
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  return [localDate(mon), localDate(sun)];
+}
+
+function initHeatStats() {
+  const f = $("#gasForm");
+  const [s, e] = lastWeekRange();
+  f.start.value = s; f.end.value = e;
+  f.end.max = localDate(); f.start.max = localDate();
+  f.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const btn = f.querySelector("button");
+    btn.disabled = true;
+    try {
+      await postJSON("/api/heatstats/gas", { start: f.start.value, end: f.end.value, m3: f.m3.value });
+      gasMsg(`Opgeslagen: ${f.m3.value} m³ van ${shortDay(f.start.value)} t/m ${shortDay(f.end.value)}.`);
+      f.m3.value = "";
+      await loadHeatStats();
+    } catch (err) {
+      gasMsg(`Lukte niet: ${err.message || err}`, true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  $("#gasList").addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button[data-id]");
+    if (!b) return;
+    try {
+      await sendJSON(`/api/heatstats/gas/${b.dataset.id}`, "DELETE");
+      gasMsg("Verwijderd.");
+      await loadHeatStats();
+    } catch (err) {
+      gasMsg(`Lukte niet: ${err.message || err}`, true);
+    }
+  });
+  const bf = $("#gasBaseForm");
+  bf.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    try {
+      const r = await postJSON("/api/heatstats/gas-base", { m3: bf.m3.value || "0" });
+      gasMsg(`Opgeslagen: ${nl2.format(r.gas_base_m3_day)} m³ per dag voor douchen en koken.`);
+      await loadHeatStats();
+    } catch (err) {
+      gasMsg(`Lukte niet: ${err.message || err}`, true);
+    }
+  });
+  const tbl = $("#hsTable");
+  tbl.addEventListener("click", (ev) => {
+    const td = ev.target.closest("td.note");
+    if (!td || hs.editing) return;
+    if (ev.target.closest("button")) { hs.editing = td.dataset.week; renderHeatStats(); }
+  });
+  tbl.addEventListener("keydown", (ev) => {
+    const inp = ev.target.closest("td.note input");
+    if (!inp) return;
+    if (ev.key === "Enter") { ev.preventDefault(); inp.blur(); }
+    if (ev.key === "Escape") { hs.editing = null; renderHeatStats(); }
+  });
+  tbl.addEventListener("focusout", (ev) => {
+    const inp = ev.target.closest("td.note input");
+    if (inp && hs.editing) saveNote(inp.closest("td").dataset.week, inp.value);
+  });
+}
+
 function route() {
   let view = (location.hash || "#nu").slice(1);
   if (view === "airco") view = "klimaat"; // oude link
@@ -1486,6 +1622,7 @@ initHistory();
 initPanels();
 initAircon();
 initHeating();
+initHeatStats();
 route();
 pollLive();
 setInterval(() => { if (!document.hidden) pollLive(); }, 5000);

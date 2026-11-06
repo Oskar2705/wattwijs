@@ -216,6 +216,31 @@
         <div class="ac-units" id="heatRooms"></div>
         <p class="hint ac-note" id="heatNote"></p>
       </div>
+      <div id="hsWrap" hidden>
+        <div class="ac-head">
+          <h2 class="section-title">Verwarming per week</h2>
+          <p class="hint">Hoeveel stroom en gas het verwarmen kostte, en hoe koud het was. Per graaddag kun je weken eerlijk vergelijken, ook als het de ene week kouder was dan de andere.</p>
+        </div>
+        <div class="table-wrap" id="hsTable"></div>
+        <p class="hint ac-note">Graaddagen: per dag 18 graden min de gemiddelde buitentemperatuur. COP: hoeveel warmte de warmtepomp per kWh stroom maakt (hoger is beter). Gas telt zonder het deel voor douchen en koken.</p>
+        <div class="card hs-form">
+          <h3>Gas invullen</h3>
+          <p class="hint">Neem het gasverbruik over uit de app van je energieleverancier, of reken het uit met twee meterstanden.</p>
+          <form id="gasForm" class="hs-row">
+            <label>Van <input type="date" name="start" required></label>
+            <label>t/m <input type="date" name="end" required></label>
+            <label><input type="text" name="m3" inputmode="decimal" placeholder="0,0" required size="5"> m³</label>
+            <button class="btn" type="submit">Opslaan</button>
+          </form>
+          <p class="hs-msg" id="gasMsg" role="status"></p>
+          <ul class="hs-list" id="gasList"></ul>
+          <form id="gasBaseForm" class="hs-row hs-base">
+            <label>Douchen en koken: <input type="text" name="m3" inputmode="decimal" size="4"> m³ per dag</label>
+            <button class="btn ghost" type="submit">Opslaan</button>
+          </form>
+          <p class="hint">Tip: neem je gemiddelde gasverbruik per dag in de zomer, als de verwarming uit staat.</p>
+        </div>
+      </div>
       <div id="acWrap" hidden>
         <div class="ac-head">
           <h2 class="section-title">Airco's</h2>

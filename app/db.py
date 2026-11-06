@@ -12,6 +12,13 @@ from .config import config
 
 ENERGY_COLS = ["import_wh", "export_wh", "solar_wh", "charge_wh", "discharge_wh", "heatpump_wh", "house_wh", "aircon_wh"]
 POWER_COLS = ["grid_w", "solar_w", "battery_w", "house_w", "heatpump_w", "soc", "aircon_w"]
+# Verwarming: geleverde warmte (Wh, opgeteld) en temperaturen (gemiddeld per minuut).
+# Apart gehouden zodat bestaande rijen, de geschiedenis en de CSV-export niet veranderen.
+HEAT_ENERGY_COLS = ["heat_wh"]
+CLIMATE_COLS = ["supply_temp", "outdoor_temp", "room_temp"]
+EXTRA_COLS = [*HEAT_ENERGY_COLS, *CLIMATE_COLS]
+MINUTE_COLS = ["ts", "day", "hour", *ENERGY_COLS, *POWER_COLS, *EXTRA_COLS]
+BASE_TEMP_C = 18.0  # graaddagen: per dag max(0, 18 - gemiddelde buitentemperatuur)
 
 def consumption_wh(t: dict[str, Any]) -> float:
     """Verbruik van het huis over een periode, uit de energiebalans.
@@ -41,7 +48,8 @@ CREATE TABLE IF NOT EXISTS minute (
     day TEXT NOT NULL,              -- lokale datum JJJJ-MM-DD
     hour INTEGER NOT NULL,          -- lokaal uur 0-23
     {", ".join(c + " REAL" for c in ENERGY_COLS)},
-    {", ".join(c + " REAL" for c in POWER_COLS)}
+    {", ".join(c + " REAL" for c in POWER_COLS)},
+    {", ".join(c + " REAL" for c in EXTRA_COLS)}
 );
 CREATE INDEX IF NOT EXISTS minute_day ON minute(day);
 
@@ -85,6 +93,14 @@ CREATE TABLE IF NOT EXISTS push_sub (
 );
 
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT);
+
+CREATE TABLE IF NOT EXISTS gas_period (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start TEXT NOT NULL,            -- eerste dag (lokaal, JJJJ-MM-DD)
+    end TEXT NOT NULL,              -- laatste dag, inclusief
+    m3 REAL NOT NULL,
+    created REAL
+);
 """
 
 
@@ -99,7 +115,7 @@ class DB:
             self.conn.executescript(SCHEMA)
             # Kolommen die later zijn bijgekomen (bv. aircon_wh) toevoegen aan een bestaande database.
             have = {r[1] for r in self.conn.execute("PRAGMA table_info(minute)")}
-            for c in [*ENERGY_COLS, *POWER_COLS]:
+            for c in [*ENERGY_COLS, *POWER_COLS, *EXTRA_COLS]:
                 if c not in have:
                     self.conn.execute(f"ALTER TABLE minute ADD COLUMN {c} REAL")
             self.conn.commit()
@@ -137,10 +153,12 @@ class DB:
     # ---- minuten ----
     def write_minute(self, ts: int, energy: dict[str, float], power: dict[str, float | None]) -> None:
         local = datetime.fromtimestamp(ts, config.tz)
-        cols = ["ts", "day", "hour", *ENERGY_COLS, *POWER_COLS]
+        cols = MINUTE_COLS
         vals = [ts, local.date().isoformat(), local.hour]
-        vals += [round(energy.get(c, 0.0), 3) for c in ENERGY_COLS]
+        vals += [round(energy.get(c, 0.0), 3) for c in [*ENERGY_COLS, *HEAT_ENERGY_COLS][: len(ENERGY_COLS)]]
         vals += [None if power.get(c) is None else round(power[c], 1) for c in POWER_COLS]
+        vals += [round(energy.get(c, 0.0), 3) for c in HEAT_ENERGY_COLS]
+        vals += [None if power.get(c) is None else round(power[c], 1) for c in CLIMATE_COLS]
         sql = (
             f"INSERT INTO minute({','.join(cols)}) VALUES({','.join('?' * len(cols))}) "
             f"ON CONFLICT(ts) DO UPDATE SET " + ",".join(f"{c}=excluded.{c}" for c in cols[1:])
@@ -148,7 +166,9 @@ class DB:
         self.x(sql, vals)
 
     def write_minutes(self, rows: list[tuple]) -> None:
-        cols = ["ts", "day", "hour", *ENERGY_COLS, *POWER_COLS]
+        """Rijen in de volgorde van MINUTE_COLS; kortere rijen (zonder verwarmingskolommen) worden aangevuld."""
+        cols = MINUTE_COLS
+        rows = [tuple(r) + (None,) * (len(cols) - len(r)) for r in rows]
         with self.lock:
             self.conn.executemany(
                 f"INSERT OR REPLACE INTO minute({','.join(cols)}) VALUES({','.join('?' * len(cols))})", rows
@@ -268,6 +288,38 @@ class DB:
 
     def recent_alerts(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.q("SELECT * FROM panel_alert ORDER BY id DESC LIMIT ?", (limit,))
+
+    # ---- gas (handmatig ingevuld) en verwarming per dag ----
+    def add_gas(self, start: str, end: str, m3: float) -> int:
+        import time as _time
+
+        with self.lock:
+            cur = self.conn.execute(
+                "INSERT INTO gas_period(start, end, m3, created) VALUES(?,?,?,?)", (start, end, m3, _time.time())
+            )
+            self.conn.commit()
+            return int(cur.lastrowid)
+
+    def gas_periods(self, limit: int = 200) -> list[dict[str, Any]]:
+        return self.q("SELECT id, start, end, m3 FROM gas_period ORDER BY start DESC, id DESC LIMIT ?", (limit,))
+
+    def delete_gas(self, gid: int) -> None:
+        self.x("DELETE FROM gas_period WHERE id=?", (gid,))
+
+    def heating_days(self, start: str, end: str) -> list[dict[str, Any]]:
+        """Per dag: stroom en warmte van de warmtepomp, gewogen aanvoertemperatuur, buiten- en
+        kamertemperatuur, en de stroomkosten van de warmtepomp tegen de kwartierprijzen."""
+        return self.q(
+            "SELECT m.day AS day, SUM(m.heatpump_wh) AS hp_wh, SUM(m.heat_wh) AS heat_wh, "
+            "SUM(CASE WHEN m.heat_wh > 0 THEN m.supply_temp * m.heat_wh END) "
+            "  / NULLIF(SUM(CASE WHEN m.heat_wh > 0 AND m.supply_temp IS NOT NULL THEN m.heat_wh END), 0) AS supply_temp, "
+            "AVG(m.outdoor_temp) AS outdoor_temp, COUNT(m.outdoor_temp) AS outdoor_minutes, "
+            "AVG(m.room_temp) AS room_temp, "
+            "SUM(m.heatpump_wh * p.all_in) / 1000 AS hp_cost, COUNT(p.ts) AS priced_minutes, COUNT(*) AS minutes "
+            "FROM minute m LEFT JOIN price p ON p.ts = m.ts - (m.ts % 900) "
+            "WHERE m.day BETWEEN ? AND ? GROUP BY m.day ORDER BY m.day",
+            (start, end),
+        )
 
 
 def month_days(month: str) -> list[str]:

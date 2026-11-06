@@ -144,6 +144,14 @@ Vul `LATITUDE` en `LONGITUDE` in (de plek van het huis, in decimale graden) en d
 
 Zolang je saldeert (vóór `CONTRACT_START`) blijft het goedkoopste blok het hoofdadvies en komt het zonnige blok er als extra regel bij, omdat teruggeleverde stroom dan tegen dezelfde prijs wordt verrekend. Vanaf `CONTRACT_START` komt het zonnige blok voorop en is het goedkoopste blok de terugvaloptie. De app heeft eerst een paar zonnige dagen geschiedenis nodig voordat hij een zontip geeft.
 
+## Verwarming per week
+
+Op het tabblad Klimaat staat een weekoverzicht van de verwarming: de gemiddelde buitentemperatuur, het aantal graaddagen (per dag 18 graden min de gemiddelde buitentemperatuur), het stroomverbruik, de geleverde warmte en de COP van de warmtepomp, de gemiddelde aanvoertemperatuur en het gasverbruik. Stroom en gas staan ook per graaddag. Zo kun je weken met andere instellingen (stooklijn, eco-stand, slimme sturing) eerlijk vergelijken, ook als het de ene week kouder was. Per week kun je een notitie maken, bijvoorbeeld welke instelling er die week gold.
+
+- Warmte, aanvoer- en buitentemperatuur komen van de warmtepomp (nu de DeWarmte-koppeling) en worden per minuut opgeslagen.
+- Gas lees je niet automatisch uit: vul het verbruik over een periode in, bijvoorbeeld wekelijks vanuit de app van je energieleverancier.
+- Gas gaat ook naar douchen en koken. Stel in hoeveel dat per dag is (in de app, of met `GAS_BASE_M3_PER_DAY`); dat deel wordt afgetrokken. Een goede schatting is je gemiddelde per dag in de zomer.
+
 ## App op het beginscherm en pushmeldingen
 
 De app is een installeerbare webapp: een eigen icoon, geen browserbalken en pushmeldingen. Een App Store-app is niet nodig.

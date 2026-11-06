@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import aircontimer, integrations, mailer, notifier, panels, prices, push, recorder
+from . import aircontimer, heating_stats, integrations, mailer, notifier, panels, prices, push, recorder
 from .config import config
 from .db import ENERGY_COLS, consumption_wh, get_db, month_days, self_sufficiency
 from .state import state
@@ -403,6 +403,68 @@ async def heating_set(room_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(504, "tado reageert niet. Probeer het zo nog eens.") from None
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, str(exc)) from None
+
+
+# ---------------- verwarming per week en gas ----------------
+
+
+def _num_field(body: dict[str, Any], key: str, lo: float, hi: float) -> float:
+    try:
+        v = float(str(body.get(key, "")).replace(",", "."))
+    except ValueError:
+        raise HTTPException(400, "Vul een getal in.") from None
+    if not lo <= v <= hi:
+        raise HTTPException(400, f"Dat getal klopt niet (tussen {lo:g} en {hi:g}).")
+    return v
+
+
+@app.get("/api/heatstats")
+def heatstats(weeks: int = 10) -> dict[str, Any]:
+    n = max(1, min(weeks, 60))
+    return {
+        "weeks": heating_stats.weeks(today(), n),
+        "gas": get_db().gas_periods(limit=50),
+        "gas_base_m3_day": heating_stats.gas_base_m3_day(),
+        "base_temp": 18,
+    }
+
+
+@app.post("/api/heatstats/gas")
+async def gas_add(request: Request) -> dict[str, Any]:
+    body = await _json_body(request)
+    s, e = _parse_day(body.get("start")), _parse_day(body.get("end"))
+    if e < s:
+        raise HTTPException(400, "De einddatum ligt voor de begindatum.")
+    if date.fromisoformat(e) > today():
+        raise HTTPException(400, "De einddatum ligt in de toekomst.")
+    m3 = _num_field(body, "m3", 0, 500)
+    gid = get_db().add_gas(s, e, m3)
+    log.info("Gas ingevuld: %s t/m %s, %.2f m3", s, e, m3)
+    return {"id": gid}
+
+
+@app.delete("/api/heatstats/gas/{gid}")
+def gas_delete(gid: int) -> dict[str, Any]:
+    get_db().delete_gas(gid)
+    return {"deleted": gid}
+
+
+@app.post("/api/heatstats/gas-base")
+async def gas_base(request: Request) -> dict[str, Any]:
+    v = _num_field(await _json_body(request), "m3", 0, 10)
+    get_db().set_kv("gas_base_m3_day", str(v))
+    return {"gas_base_m3_day": v}
+
+
+@app.post("/api/heatstats/note")
+async def heat_note(request: Request) -> dict[str, Any]:
+    body = await _json_body(request)
+    ws = _parse_day(body.get("week_start"))
+    if date.fromisoformat(ws).weekday() != 0:
+        raise HTTPException(400, "Een week begint op maandag.")
+    text = str(body.get("text") or "").strip()[:200]
+    get_db().set_kv(f"heating_note_{ws}", text)
+    return {"week_start": ws, "text": text}
 
 
 @app.get("/api/curve")

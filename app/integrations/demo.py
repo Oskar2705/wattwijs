@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from ..config import config
-from ..db import ENERGY_COLS, POWER_COLS, get_db
+from ..db import CLIMATE_COLS, ENERGY_COLS, HEAT_ENERGY_COLS, POWER_COLS, get_db
 from ..prices import QUARTER
 from ..recorder import MinuteAccumulator
 from ..state import Source, state
@@ -51,6 +51,14 @@ def heatpump(t: datetime) -> float:
     slot = (t.hour * 60 + t.minute) // 40
     on = random.Random(slot * 7 + t.toordinal()).random() < (0.65 if t.hour < 9 or t.hour >= 18 else 0.4)
     return 1150.0 + 250 * math.sin(t.minute / 9) if on else 12.0
+
+
+def outdoor(t: datetime) -> float:
+    """Buitentemperatuur: kouder richting de winter, koudst rond zonsopgang, plus wat weer per dag."""
+    season = 9.0 - (t.timetuple().tm_yday - 290) * 0.08
+    day = 3.0 * math.sin(t.hour / 24 * 2 * math.pi - 2.0)
+    weather = random.Random(t.toordinal()).uniform(-3, 3)
+    return round(season + day + weather, 1)
 
 
 def aircon_history(t: datetime) -> float:
@@ -148,11 +156,16 @@ def backfill_history(days: int = 45) -> None:
             "heatpump_w": v["hp"],
             "aircon_w": v["ac"],
             "soc": v["soc"],
+            "heat_w": v["hp"] * (2.6 + 0.08 * outdoor(t)) if v["hp"] > 100 else 0.0,
+            "supply_temp": 40.0 - 0.6 * outdoor(t) if v["hp"] > 100 else None,
+            "outdoor_temp": outdoor(t),
+            "room_temp": 19.5 + random.Random(ts // 3600).uniform(-0.4, 0.4),
         }
         acc.add(snap, 60)
         p = acc.power()
         rows.append(
-            (ts, t.date().isoformat(), t.hour, *[acc.energy[c] for c in ENERGY_COLS], *[p[c] for c in POWER_COLS])
+            (ts, t.date().isoformat(), t.hour, *[acc.energy[c] for c in ENERGY_COLS], *[p[c] for c in POWER_COLS],
+             *[acc.energy[c] for c in HEAT_ENERGY_COLS], *[p[c] for c in CLIMATE_COLS])
         )
     db.write_minutes(rows)
     sim.soc_wh = s.soc_wh
@@ -175,9 +188,9 @@ async def run(src: Source) -> None:
         state.solar.update(power_w=v["solar"])
         state.heatpump.update(
             power_w=v["hp"],
-            heat_output_w=v["hp"] * 3.6 if v["hp"] > 100 else 0.0,
-            supply_temperature=34.5 if v["hp"] > 100 else 27.0,
-            outdoor_temperature=8.5,
+            heat_output_w=v["hp"] * (2.6 + 0.08 * outdoor(t)) if v["hp"] > 100 else 0.0,
+            supply_temperature=40.0 - 0.6 * outdoor(t) if v["hp"] > 100 else 27.0,
+            outdoor_temperature=outdoor(t),
             is_on=v["hp"] > 100,
             fault_code=0,
         )

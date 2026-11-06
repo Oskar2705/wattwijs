@@ -121,6 +121,7 @@ class Config:
 
     # Stroomprijzen (Frank Energie, openbare API zonder login)
     prices_enabled: bool = field(default_factory=lambda: _bool("PRICES_ENABLED", True))
+    gas_base_m3_per_day: float = field(default_factory=lambda: _float("GAS_BASE_M3_PER_DAY", 0))
     contract_start: str = field(default_factory=lambda: _str("CONTRACT_START", "2027-01-01"))
     export_multiplier: float = field(default_factory=lambda: _float("EXPORT_MULTIPLIER", 1.0))
     export_fee_eur: float = field(default_factory=lambda: _float("EXPORT_FEE_EUR", 0.0))
