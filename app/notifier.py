@@ -118,6 +118,7 @@ def build_morning(now: datetime, outlook: dict[str, Any] | None = None) -> tuple
     today = now.date()
     dynamic = net_metering_over(today)
     lines: list[str] = []
+    prio: list[int] = []  # belang per regel, lager = belangrijker (zie fit)
     title = "Goedemorgen"
     o = outlook or {}
     sun_h, solar_kwh, sun, win = o.get("sun_hours"), o.get("solar_kwh"), o.get("block"), o.get("sun_window")
@@ -130,15 +131,16 @@ def build_morning(now: datetime, outlook: dict[str, Any] | None = None) -> tuple
         if solar_kwh is not None:
             title += f" (ongeveer {_num(solar_kwh)} kWh)"
         if win and not grey:
-            lines.append(f"De zon schijnt vooral tussen {hm(win['start'])} en {hm(win['end'])}.")
+            lines.append(f"De zon schijnt vooral tussen {hm(win['start'])} en {hm(win['end'])}."); prio.append(4)
         if sun:
             extra = " of de warmtepomp een graadje hoger" if exportwatch.heating_season(today, weather.today_temp()) else ""
+            what = "de was, de vaatwasser of de warmtepomp een graadje hoger" if extra else "de was of de vaatwasser"
             lines.append(f"Tussen {hm(sun['start'])} en {hm(sun['end'])} blijft er stroom over (tot {kw(sun['surplus_w'])}). "
-                         f"Goed moment voor de wasmachine of de vaatwasser{extra}.")
+                         f"Goed moment voor {what}."); prio.append(0)
             if dynamic and state.battery.configured:
-                lines.append("De batterij kan dan ook bijladen met de zon.")
+                lines.append("De batterij kan dan ook bijladen met de zon."); prio.append(7)
         elif solar_kwh is not None:
-            lines.append("Er blijft vandaag weinig zonnestroom over, dus de was kan wanneer het jou uitkomt.")
+            lines.append("Er blijft vandaag weinig zonnestroom over, dus de was kan wanneer het jou uitkomt."); prio.append(0)
 
     # prijs: pas vanaf het dynamische contract
     if dynamic:
@@ -150,26 +152,26 @@ def build_morning(now: datetime, outlook: dict[str, Any] | None = None) -> tuple
                 title = f"Vandaag het goedkoopst: {hm(block['start'])}–{hm(block['end'])}"
             if sun and _overlap(sun, block):
                 lines.append(f"Dat is ook ongeveer de goedkoopste tijd van de dag "
-                             f"({hm(block['start'])}–{hm(block['end'])}, {cent(block['avg'])} per kWh).")
+                             f"({hm(block['start'])}–{hm(block['end'])}, {cent(block['avg'])} per kWh)."); prio.append(1)
             else:
                 lines.append(f"Stroom van het net is het goedkoopst tussen {hm(block['start'])} en {hm(block['end'])} "
-                             f"({cent(block['avg'])} per kWh).")
+                             f"({cent(block['avg'])} per kWh)."); prio.append(1)
             rest = [r for r in rows if r["ts"] >= int(now.timestamp()) - QUARTER]
             hi = max(rest, key=lambda r: r["all_in"]) if rest else None
             if hi:
-                lines.append(f"Het duurst is het rond {hm(hi['ts'])} ({cent(hi['all_in'])}).")
+                lines.append(f"Het duurst is het rond {hm(hi['ts'])} ({cent(hi['all_in'])})."); prio.append(6)
         if rows:
             neg = windows([r for r in rows if r["ts"] >= int(now.timestamp()) - QUARTER], lambda r: r["export"] < 0)
             for w in neg:
-                lines.append(f"Tussen {hm(w['start'])} en {hm(w['end'])} is de prijs negatief: stroom gebruiken levert dan zelfs iets op.")
+                lines.append(f"Tussen {hm(w['start'])} en {hm(w['end'])} is de prijs negatief: stroom gebruiken levert dan zelfs iets op."); prio.append(3)
 
     for a in db.open_alerts():
         name = a["name"] or a["serial"]
-        lines.append(f"⚠ Zonnepaneel {name} doet het nog steeds niet goed.")
+        lines.append(f"⚠ Zonnepaneel {name} doet het nog steeds niet goed."); prio.append(2)
 
     if not lines and title == "Goedemorgen":
         return None
-    return title, "\n".join(lines)
+    return title, fit(lines, prio=prio)
 
 
 # ---------------- avond ----------------
@@ -205,9 +207,29 @@ def share_text(pct: float) -> str:
     return f"{pct:.0f}%"
 
 
+# iOS toont van een webmelding maar 256 tekens tekst; daarna wordt hij afgekapt, midden in een woord.
+BODY_MAX = 240
+
+
+def fit(parts: list[str], limit: int = BODY_MAX, sep: str = "\n", prio: list[int] | None = None) -> str:
+    """Zet de delen onder elkaar zolang het past, in de volgorde van de lijst.
+
+    `prio` geeft per deel het belang (lager = belangrijker; standaard de volgorde zelf). Wat niet meer
+    past valt weg, maar een kleiner, minder belangrijk deel kan daarna nog wel mee."""
+    order = sorted(range(len(parts)), key=lambda i: (prio[i] if prio else i, i))
+    keep: set[int] = set()
+    for i in order:
+        if not parts[i]:
+            continue
+        cand = sep.join(parts[j] for j in sorted(keep | {i}))
+        if len(cand) <= limit:
+            keep.add(i)
+    return sep.join(parts[j] for j in sorted(keep))
+
+
 def build_evening(day: date) -> tuple[str, str] | None:
-    """Avondoverzicht als kort verhaal: opwek tegenover de verwachting, verbruik, waar de zonnestroom
-    heen ging, vanaf CONTRACT_START de kosten, en een record of mijlpaal als die er is."""
+    """Avondoverzicht, kort genoeg voor een melding op de iPhone: opwek tegenover de verwachting,
+    verbruik, waar de zonnestroom heen ging, vanaf CONTRACT_START de kosten, en een record of mijlpaal."""
     d = day.isoformat()
     t = _totals(d)
     if (t.get("minutes") or 0) < 600:
@@ -215,66 +237,62 @@ def build_evening(day: date) -> tuple[str, str] | None:
     g = lambda k: float(t.get(k) or 0.0)  # noqa: E731
     solar, house, exp, imp = g("solar_wh"), g("house_wh"), g("export_wh"), g("import_wh")
     discharge, hp, ac = g("discharge_wh"), g("heatpump_wh"), g("aircon_wh")
+    direct, to_batt, grid_batt = g("solar_direct_wh"), g("solar_to_batt_wh"), g("grid_to_batt_wh")
     ss = t["self_sufficiency"]
-    paras: list[str] = []
 
-    # opwek en verbruik
-    p1 = []
+    # opwek
     if solar < 50:
-        p1.append("De panelen wekten vandaag vrijwel niets op.")
+        sun_line = "Vrijwel geen zonnestroom vandaag."
     else:
-        line = f"De panelen wekten {kwh(solar)} op"
+        sun_line = f"{kwh(solar)} opgewekt"
         expected = get_db().get_kv(f"solar_expected_{d}")
         if expected:
             diff = solar / 1000 - float(expected)
-            if abs(diff) < 0.3:
-                line += f", ongeveer zoals vanochtend verwacht ({_num(float(expected))} kWh)"
-            else:
-                line += f", {'meer' if diff > 0 else 'minder'} dan de {_num(float(expected))} kWh die vanochtend verwacht werd"
-        p1.append(line + ".")
-    use = f"Het huis gebruikte {kwh(house)}"
-    if hp > 50:
-        use += (f", waarvan de warmtepomp het meeste ({kwh(hp)})" if hp > house / 2 else f", waarvan de warmtepomp {kwh(hp)}")
-    if ac > 50:
-        use += f" en de airco's zo'n {kwh(ac)}"
-    p1.append(use + ".")
-    boiler = t.get("boiler_h")
-    if boiler is not None and boiler >= 0.1:
-        mins = round(boiler * 60)
-        dur = f"{mins} minuten" if mins < 60 else f"{_num(boiler)} uur"
-        p1.append(f"De cv-ketel sprong {dur} bij.")
-    paras.append(" ".join(p1))
+            sun_line += (" (zoals verwacht)" if abs(diff) < 0.3 else f" (verwacht: {_num(float(expected))} kWh)")
+        sun_line += "."
 
-    # waar ging de zonnestroom heen
-    direct, to_batt, grid_batt = g("solar_direct_wh"), g("solar_to_batt_wh"), g("grid_to_batt_wh")
+    # verbruik
+    use = f"Verbruik {kwh(house)}"
+    parts = []
+    if hp > 50:
+        parts.append(f"warmtepomp {kwh(hp)}")
+    if ac > 50:
+        parts.append(f"airco's ≈ {kwh(ac)}")
+    if parts:
+        use += ", waarvan " + " en ".join(parts)
+    use += "."
+
+    # waar ging de zonnestroom heen, en wat kwam van het net
+    flow = ""
     if solar >= 50:
-        p2 = f"Van de zonnestroom ging {kwh(direct)} meteen het huis in"
+        bits = [f"{kwh(direct)} meteen gebruikt"]
         if to_batt > 50:
-            p2 += f", {kwh(to_batt)} de batterij in"
-        p2 += f" en {kwh(exp)} naar het net." if exp > 50 else "; er ging niets naar het net."
-        if discharge > 50:
-            p2 += f" De batterij gaf later {kwh(discharge)} terug aan het huis."
-        # wat van het net kwam en de batterij in ging, gebruikte het huis (nog) niet
-        p2 += f" De rest ({kwh(max(imp - grid_batt, 0.0))}) kwam van het net."
-        if grid_batt > 50:
-            p2 += f" Daarnaast laadde de batterij {kwh(grid_batt)} van het net bij."
-        paras.append(p2)
-    elif grid_batt > 50:
-        paras.append(f"De batterij laadde {kwh(grid_batt)} van het net bij.")
+            bits.append(f"{kwh(to_batt)} in de batterij")
+        if exp > 50:
+            bits.append(f"{kwh(exp)} terug")
+        flow = "Zon: " + ", ".join(bits) + "."
+    batt = f"Batterij gaf {kwh(discharge)} terug aan het huis." if discharge > 50 else ""
+    grid = f"Van het net: {kwh(max(imp - grid_batt, 0.0))}"
+    if grid_batt > 50:
+        grid += f" (+{kwh(grid_batt)} voor de batterij)"
+    grid += "."
 
     # geld: pas vanaf het dynamische contract
+    money = ""
     priced, minutes = t.get("priced_minutes") or 0, t.get("minutes") or 0
     if net_metering_over(day) and minutes and priced >= PRICE_COVERAGE_MIN * minutes:
         cost, rev = g("cost_import"), g("revenue_export")
         net = cost - rev
-        money = f"Stroom vandaag: {eur(net)}." if net >= 0 else f"Vandaag verdiend aan stroom: {eur(-net)}."
-        if rev >= 0.01:
-            money += f" Terugleveren leverde {eur(rev)} op."
-        paras.append(money)
+        money = f"Stroom vandaag: {eur(net)}" if net >= 0 else f"Verdiend aan stroom: {eur(-net)}"
+        money += f" (terugleveren {eur(rev)})." if rev >= 0.01 else "."
 
-    rec = _record(d, t)
-    if rec:
-        paras.append(rec)
+    boiler = ""
+    bh = t.get("boiler_h")
+    if bh is not None and bh >= 0.1:
+        mins = round(bh * 60)
+        boiler = f"Cv-ketel: {mins} minuten bijgesprongen." if mins < 60 else f"Cv-ketel: {_num(bh)} uur bijgesprongen."
+
+    rec = _record(d, t) or ""
 
     if ss is not None and ss >= 95:
         title = "🏡 Vandaag bijna helemaal op eigen stroom"
@@ -282,7 +300,9 @@ def build_evening(day: date) -> tuple[str, str] | None:
         title = f"Vandaag {share_text(ss)} eigen stroom" + (" ☀️" if ss >= 30 else "")
     else:
         title = f"Vandaag {kwh(house)} verbruikt"
-    return title, "\n\n".join(paras)
+    # getoond in deze volgorde; wat niet past op een iPhone, valt weg naar belang (prio)
+    lines = [sun_line, use, flow, batt, grid, boiler, money, rec]
+    return title, fit(lines, prio=[0, 1, 2, 6, 3, 5, 4, 7])
 
 
 # ---------------- week ----------------

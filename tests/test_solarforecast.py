@@ -107,8 +107,8 @@ def test_morning_message_with_sun(monkeypatch):
     win = {"start": start + 10 * 3600, "end": start + 15 * 3600}
     title, body = notifier.build_morning(now, {"sun_hours": 3.2, "sun_window": win, "solar_kwh": 9.2, "block": blk})
     assert title == "☀️ Vandaag zo'n 3 uur zon (ongeveer 9,2 kWh)"
-    assert body.startswith("De zon schijnt vooral tussen 10:00 en 15:00.")
-    assert "Tussen 11:00 en 13:00 blijft er stroom over (tot 1,8 kW)." in body
+    assert body.startswith("Tussen 11:00 en 13:00 blijft er stroom over (tot 1,8 kW).")
+    assert len(body) <= notifier.BODY_MAX  # "De zon schijnt vooral…" valt dan weg
     assert "warmtepomp een graadje hoger" in body  # april: stookseizoen
     assert "goedkoopst tussen 19:00 en 21:00" in body
     # grijze dag

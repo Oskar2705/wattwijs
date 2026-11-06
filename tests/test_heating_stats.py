@@ -217,4 +217,4 @@ def test_evening_mentions_boiler(monkeypatch):
     d = date(2043, 1, 6)  # dinsdag uit de vorige test: 1,5 uur ketel
     monkeypatch.setattr(config, "contract_start", "2099-01-01")
     _, body = notifier.build_evening(d)
-    assert "De cv-ketel sprong 1,5 uur bij." in body
+    assert "Cv-ketel: 1,5 uur bijgesprongen." in body

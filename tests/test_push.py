@@ -113,6 +113,7 @@ def test_morning_message(monkeypatch):
     d = date(2030, 3, 10)
     _seed_day(d - timedelta(days=1))
     _seed_prices(d)
+    get_db().x("DELETE FROM panel_alert")  # meldingen uit andere tests zouden regels verdringen
     get_db().x("INSERT INTO panel_alert(serial,name,opened_day,deviation,mail_status) VALUES('X','1.1.4','2030-03-01',-97,'x')")
     now = datetime.combine(d, datetime.min.time(), tzinfo=config.tz).replace(hour=7, minute=30)
     # salderen: geen prijstips
@@ -124,8 +125,10 @@ def test_morning_message(monkeypatch):
     monkeypatch.setattr(config, "contract_start", "2030-01-01")
     title, body = notifier.build_morning(now)  # zonder zonverwachting: op prijs
     assert title == "Vandaag het goedkoopst: 13:00–15:00"
-    assert "goedkoopst tussen 13:00 en 15:00" in body and "duurst is het rond 18:00" in body
+    assert "goedkoopst tussen 13:00 en 15:00" in body
     assert "Tussen 14:00 en 15:00 is de prijs negatief" in body
+    # past niet meer op een iPhone: het duurste moment valt als minst belangrijke regel weg
+    assert len(body) <= notifier.BODY_MAX and "duurst" not in body
     title, body = notifier.build_morning(now, {"sun_hours": 4.2, "solar_kwh": 6.3, "block": None})
     assert title == "☀️ Vandaag zo'n 4 uur zon (ongeveer 6,3 kWh)"
     assert "weinig zonnestroom over" in body
@@ -141,8 +144,9 @@ def test_evening_record_and_weekly():
     get_db().set_kv(f"solar_expected_{rec.isoformat()}", "11.0")
     title, body = notifier.build_evening(rec)
     assert title.startswith("Vandaag") and "eigen stroom" in title
-    assert "De panelen wekten 12,6 kWh op, meer dan de 11,0 kWh die vanochtend verwacht werd." in body
-    assert "Het huis gebruikte" in body and "meteen het huis in" in body and "kwam van het net" in body
+    assert "12,6 kWh opgewekt (verwacht: 11,0 kWh)." in body
+    assert "Verbruik" in body and "meteen gebruikt" in body and "Van het net:" in body
+    assert len(body) <= notifier.BODY_MAX
     assert "Stroom vandaag" not in body  # geen contract ingesteld: geen bedragen
     assert "Nieuw record" in body
     assert notifier.build_evening(d0 + timedelta(days=5))[1].count("Nieuw record") == 0
@@ -180,9 +184,8 @@ def test_evening_battery_split_and_price_coverage(monkeypatch):
     assert s["solar_direct_wh"] == pytest.approx(4 * 60 * 20)       # 4,8 kWh zon direct
     monkeypatch.setattr(config, "contract_start", "2031-01-01")
     _, body = notifier.build_evening(d)
-    assert "4,8 kWh meteen het huis in, 4,8 kWh de batterij in" in body
-    assert "De batterij laadde 2,4 kWh van het net bij." in body.replace("Daarnaast laadde", "De batterij laadde") \
-        or "Daarnaast laadde de batterij 2,4 kWh van het net bij." in body
+    assert "Zon: 4,8 kWh meteen gebruikt, 4,8 kWh in de batterij" in body
+    assert "(+2,4 kWh voor de batterij)" in body
     assert "€" not in body  # geen prijzen voor deze dag
     # maar een paar kwartieren met prijs: nog steeds geen bedragen (zou te laag uitvallen)
     get_db().save_prices([(start + q * 900, d.isoformat(), 0.1, 0.25) for q in range(10)])
@@ -220,3 +223,10 @@ def test_once_retries_until_success():
         except RuntimeError:
             pass
     assert get_db().get_kv("test_once_broken") == "failed"
+
+
+def test_fit_drops_least_important_parts():
+    parts = ["a" * 100, "b" * 100, "c" * 100, "d" * 20]
+    out = notifier.fit(parts, limit=240)
+    assert out == "\n".join(["a" * 100, "b" * 100, "d" * 20])  # c past niet meer, d nog wel
+    assert len(out) <= 240
