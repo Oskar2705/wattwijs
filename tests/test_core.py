@@ -286,3 +286,25 @@ def test_house_energy_not_biased_by_timing_skew():
     acc.add({"grid_w": 100, "solar_w": 500, "house_w": 600, "house_net_w": 600}, 30)
     balance = acc.energy["import_wh"] - acc.energy["export_wh"] + acc.energy["solar_wh"]
     assert acc.energy["house_wh"] == pytest.approx(balance)
+
+
+def test_panel_view_no_verdict_early_in_the_day(monkeypatch):
+    """Overdag met weinig opbrengst: geen rood vak, behalve voor een paneel met een open melding."""
+    from datetime import date as _date
+
+    from app import main as M
+    from app.db import get_db
+
+    d = "2044-03-01"
+    monkeypatch.setattr(M, "today", lambda: _date(2044, 3, 1))
+    info = {f"S{i}": {"name": f"1.1.{i}", "group": "A", "order": i} for i in range(1, 6)}
+    energy = {"S1": 140.0, "S2": 135.0, "S3": 33.0, "S4": 138.0, "S5": 2.0}
+    get_db().save_panel_day(d, info, energy, final=False)
+    get_db().x("INSERT INTO panel_alert(serial,name,opened_day,deviation,mail_status) VALUES('S5','1.1.5','2044-02-27',-99,'x')")
+    out = {p["serial"]: p for p in M.panel_view(d)["panels"]}
+    assert out["S3"]["status"] == "pending" and out["S3"]["reason"] is None  # 33 Wh: nog te vroeg
+    assert out["S5"]["status"] == "low"  # open melding: blijft zichtbaar
+    get_db().save_panel_day(d, info, {k: v * 5 for k, v in energy.items()}, final=False)
+    out = {p["serial"]: p for p in M.panel_view(d)["panels"]}
+    assert out["S3"]["status"] == "low"  # genoeg zon: nu wel een oordeel
+    get_db().x("DELETE FROM panel_alert WHERE serial='S5'")

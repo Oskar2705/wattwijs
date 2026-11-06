@@ -117,6 +117,9 @@ class Config:
     # How often today's per-panel yield is fetched during daylight (the portal itself updates about every 15 min)
     panel_refresh_minutes: int = field(default_factory=lambda: max(5, _int("PANEL_REFRESH_MINUTES", 15)))
     panel_recovery_mail: bool = field(default_factory=lambda: _bool("PANEL_RECOVERY_MAIL", True))
+    # Overdag pas een oordeel per paneel tonen als de buren minstens zoveel hebben opgewekt;
+    # met weinig opbrengst (ochtend, schaduw van lage zon) schommelt het percentage te veel.
+    panel_daytime_min_wh: float = field(default_factory=lambda: _float("PANEL_DAYTIME_MIN_WH", 300))
     panel_backfill_days: int = field(default_factory=lambda: _int("PANEL_BACKFILL_DAYS", 14))
 
     # Stroomprijzen (Frank Energie, openbare API zonder login)

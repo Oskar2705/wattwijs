@@ -755,6 +755,7 @@ function drawPanels() {
   const low = d.panels.filter((p) => p.status === "low");
   const lowText = (p) => (p.reason === "dead" ? `Paneel ${esc(p.name)} leverde (bijna) niets` : `Paneel ${esc(p.name)} bleef achter`);
   const measurable = d.panels.filter((p) => p.status !== "skip");
+  const pending = d.panels.filter((p) => p.status === "pending");
   let v;
   if (!d.configured) {
     v = verdict("neutral", infoIcon(), "De paneelcontrole staat uit", "Vul de SolarEdge-inloggegevens in om de opbrengst per paneel te zien.");
@@ -777,6 +778,9 @@ function drawPanels() {
   } else if (low.length) {
     v = verdict("neutral", infoIcon(), low.map(lowText).join(", "),
       `Blijft dit ${d.consecutive_days} zonnige dagen op rij zo, dan krijg je automatisch een mail.`);
+  } else if (pending.length) {
+    v = verdict("neutral", infoIcon(), "Nog te vroeg om de panelen te vergelijken",
+      `Er is vandaag nog te weinig opgewekt voor een eerlijk oordeel. Dat volgt in de loop van de dag; de controle is om ${esc(d.check_time)}.`);
   } else {
     v = verdict("good", okIcon(), `Alle ${d.panels.length} panelen werken normaal`, "Geen enkel paneel wijkt opvallend af van de andere.");
   }
@@ -819,7 +823,8 @@ function drawPanels() {
 }
 
 function panelTip(p) {
-  const st = p.reason === "dead" ? "Levert (bijna) niets" : p.status === "low" ? "Te laag" : p.status === "skip" ? "Telt niet mee (te weinig zon)" : "Normaal";
+  const st = p.reason === "dead" ? "Levert (bijna) niets" : p.status === "low" ? "Te laag"
+    : p.status === "skip" ? "Telt niet mee (te weinig zon)" : p.status === "pending" ? "Nog te vroeg om te beoordelen" : "Normaal";
   return `<b>Paneel ${esc(p.name)}</b>` +
     tipRow("var(--grid)", "Opbrengst", fmtKwh(p.wh)) +
     (p.reference_wh ? tipRow("var(--ink)", "Normaal voor dit paneel", fmtKwh(p.reference_wh)) : "") +

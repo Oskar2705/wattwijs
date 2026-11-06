@@ -531,8 +531,13 @@ def panel_view(day: str | None = None) -> dict[str, Any]:
     rows = db.panel_day(d)
     ev = panels.evaluate_stored_day(d) if rows else {}
     alerts = {a["serial"] for a in db.open_alerts()}
+    final = bool(rows and all(r["final"] for r in rows))
+    # Overdag, met nog weinig opbrengst: geen oordeel per paneel (behalve bij een open melding).
+    refs = panels.peer_reference(rows) if rows and not final else {}
     for r in rows:
         r.update(ev.get(r["serial"], {}))
+        if refs and r["serial"] not in alerts and refs[r["serial"]][0] < config.panel_daytime_min_wh:
+            r.update(status="pending", deviation=None, reason=None)
         r["name"] = panels.display_name(r["name"] or r["serial"])
         r["alert"] = r["serial"] in alerts
     rows.sort(key=lambda r: (r["grp"] or "", panels.natural_key(r["name"])))
@@ -545,7 +550,8 @@ def panel_view(day: str | None = None) -> dict[str, Any]:
         "layout": panels.parse_layout(),
         "days": days,
         "panels": rows,
-        "final": bool(rows and all(r["final"] for r in rows)),
+        "final": final,
+        "daytime_min_wh": config.panel_daytime_min_wh,
         "threshold_pct": config.panel_threshold_pct,
         "consecutive_days": config.panel_consecutive_days,
         "check_time": config.panel_check_time,

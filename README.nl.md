@@ -119,7 +119,7 @@ Panelen op één dak verschillen van nature: de ene rij krijgt meer schaduw dan 
 PANEL_LAYOUT=1.1.1,1.1.2,1.1.3,1.1.4;1.1.8,1.1.7,1.1.6,1.1.5
 ```
 
-Overdag worden de tegels elke `PANEL_REFRESH_MINUTES` (15) minuten ververst, en meteen als je het tabblad opent. Elke avond om `PANEL_CHECK_TIME`:
+Overdag worden de tegels elke `PANEL_REFRESH_MINUTES` (15) minuten ververst, en meteen als je het tabblad opent. Zolang de buren van een paneel samen nog minder dan `PANEL_DAYTIME_MIN_WH` (300 Wh) hebben opgewekt, toont de app voor dat paneel nog geen oordeel: 's ochtends schommelt het percentage te veel (behalve bij een paneel met een open melding). Elke avond om `PANEL_CHECK_TIME`:
 
 - **Aandeel** = de opbrengst van het paneel gedeeld door de mediaan van de andere panelen in dezelfde rij. Een kapot paneel telt nooit mee als maatstaf voor zijn buren.
 - **Normaal** = het aandeel van het paneel over de afgelopen `PANEL_BASELINE_DAYS` (30) meetbare dagen. De ondergrens is het 20e percentiel, dus de slechtere gewone dagen. Zo geeft vaste schaduw op één paneel geen melding. Hiervoor zijn minstens 5 dagen nodig.

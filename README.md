@@ -121,7 +121,7 @@ Panels on one roof naturally differ: one row gets more shade than another, and w
 PANEL_LAYOUT=1.1.1,1.1.2,1.1.3,1.1.4;1.1.8,1.1.7,1.1.6,1.1.5
 ```
 
-During the day the tiles are refreshed every `PANEL_REFRESH_MINUTES` (15), and right away when you open the tab. Every evening at `PANEL_CHECK_TIME`:
+During the day the tiles are refreshed every `PANEL_REFRESH_MINUTES` (15), and right away when you open the tab. While a panel's neighbours have produced less than `PANEL_DAYTIME_MIN_WH` (300 Wh), the app shows no verdict for that panel yet: in the morning the percentage swings too much (except for a panel with an open alert). Every evening at `PANEL_CHECK_TIME`:
 
 - **Share** = the panel's yield divided by the median of the other panels in its row. A dead panel never counts as the reference for its neighbours.
 - **Normal** = the panel's share over the last `PANEL_BASELINE_DAYS` (30) usable days. The lower bound is the 20th percentile, which covers the worse ordinary days. This way, permanent shade on one panel doesn't trigger an alert. At least 5 days of history are needed.
