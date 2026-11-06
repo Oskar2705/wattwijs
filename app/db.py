@@ -100,6 +100,13 @@ CREATE TABLE IF NOT EXISTS weather_day (
     source TEXT
 );
 
+CREATE TABLE IF NOT EXISTS dw_hour (
+    ts INTEGER PRIMARY KEY,         -- begin van het uur, unix-tijd (UTC)
+    day TEXT NOT NULL,              -- lokale datum
+    heat_kwh REAL, elec_kwh REAL, backup_kwh REAL   -- eigen meting van de warmtepomp
+);
+CREATE INDEX IF NOT EXISTS dw_hour_day ON dw_hour(day);
+
 CREATE TABLE IF NOT EXISTS gas_period (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     start TEXT NOT NULL,            -- eerste dag (lokaal, JJJJ-MM-DD)
@@ -320,6 +327,22 @@ class DB:
                 [(d, t, source) for d, t in rows],
             )
             self.conn.commit()
+
+    def save_dw_hours(self, rows: list[tuple[int, float, float, float]]) -> None:
+        with self.lock:
+            self.conn.executemany(
+                "INSERT INTO dw_hour(ts, day, heat_kwh, elec_kwh, backup_kwh) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(ts) DO UPDATE SET heat_kwh=excluded.heat_kwh, elec_kwh=excluded.elec_kwh, "
+                "backup_kwh=excluded.backup_kwh",
+                [(ts, datetime.fromtimestamp(ts, config.tz).date().isoformat(), h, e, b) for ts, h, e, b in rows],
+            )
+            self.conn.commit()
+
+    def dw_days(self, start: str, end: str) -> dict[str, dict[str, float]]:
+        """Per dag de eigen meting van de warmtepomp: warmte, stroom, bijverwarming (kWh) en het aantal uren."""
+        return {r["day"]: r for r in self.q(
+            "SELECT day, SUM(heat_kwh) AS heat_kwh, SUM(elec_kwh) AS elec_kwh, SUM(backup_kwh) AS backup_kwh, "
+            "COUNT(*) AS hours FROM dw_hour WHERE day BETWEEN ? AND ? GROUP BY day", (start, end))}
 
     def weather_days(self, start: str, end: str) -> dict[str, float]:
         return {r["day"]: r["temp_mean"] for r in self.q(

@@ -67,9 +67,24 @@ def day_temp(r: dict[str, Any], weather: dict[str, float], k: str) -> float | No
     return None
 
 
+def pump_day(r: dict[str, Any], portal: dict[str, Any] | None, is_today: bool) -> tuple[float, float, float, str]:
+    """(stroom Wh, warmte Wh, stroom Wh uit minuten mét warmtemeting, bron) voor één dag.
+
+    Bij voorkeur de eigen meting van de warmtepomp (DeWarmte-portal): die meet warmte én stroom
+    zelf, ook van vóór Wattwijs ze opsloeg. Alleen een (vrijwel) volledige dag telt; anders
+    Wattwijs' eigen meting (stroom per minuut, warmte sinds die wordt opgeslagen)."""
+    if portal and (portal.get("hours") or 0) >= (1 if is_today else 20):
+        e, q = float(portal.get("elec_kwh") or 0.0) * 1000, float(portal.get("heat_kwh") or 0.0) * 1000
+        return e, q, e, "dewarmte"
+    return (float(r.get("hp_wh") or 0.0), float(r.get("heat_wh") or 0.0),
+            float(r.get("hp_wh_measured") or 0.0), "wattwijs")
+
+
 def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float], today: date,
-                   base: float = 0.0, weather: dict[str, float] | None = None) -> dict[str, Any]:
+                   base: float = 0.0, weather: dict[str, float] | None = None,
+                   portal: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     weather = weather or {}
+    portal = portal or {}
     by_day = {r["day"]: r for r in days}
     n_days = min(7, (today - start).days + 1)
     keys = [(start + timedelta(days=i)).isoformat() for i in range(n_days)]
@@ -81,13 +96,20 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
     priced = minutes = gas_days = temp_days = 0
     rooms: list[float] = []
     temps: list[float] = []
+    sources: set[str] = set()
+    backup = 0.0
     for k in keys:
         r = by_day.get(k) or {}
-        h, q = float(r.get("hp_wh") or 0.0), float(r.get("heat_wh") or 0.0)
+        if not r and k not in portal:
+            continue
+        h, q, h_measured, src = pump_day(r, portal.get(k), k == today.isoformat())
+        sources.add(src)
+        if src == "dewarmte":
+            backup += float(portal[k].get("backup_kwh") or 0.0)
         hp_wh += h
         heat_wh += q
         if q > 0:  # COP: warmte gedeeld door de stroom uit dezelfde minuten (niet die van de hele dag)
-            cop_hp_wh += float(r.get("hp_wh_measured") or 0.0)
+            cop_hp_wh += h_measured
             cop_heat_wh += q
             if r.get("supply_temp") is not None:
                 supply_w += float(r["supply_temp"]) * q
@@ -129,6 +151,8 @@ def summarize_week(start: date, days: list[dict[str, Any]], gas: dict[str, float
         "gas_m3_per_dd": _r(max(gd_gas_m3 - base * gd_gas_days, 0.0) / gd_gas, 3) if gd_gas > 0.5 else None,
         "hp_cost": _r(hp_cost, 2) if minutes and priced >= 0.9 * minutes else None,
         "note": get_db().get_kv(f"heating_note_{start.isoformat()}") or "",
+        "pump_source": (sources.pop() if len(sources) == 1 else "gemengd") if sources else None,
+        "backup_kwh": _r(backup, 2) if "dewarmte" in sources else None,
     }
 
 
@@ -140,11 +164,13 @@ def weeks(today: date, n: int = 10) -> list[dict[str, Any]]:
     gas = gas_per_day(db.gas_periods(limit=1000))
     base = gas_base_m3_day()
     weather = db.weather_days(first.isoformat(), today.isoformat())
+    portal = db.dw_days(first.isoformat(), today.isoformat())
     out = []
     for i in range(n):
         s = first + timedelta(weeks=i)
-        wd = [r for r in days if s.isoformat() <= r["day"] < (s + timedelta(days=7)).isoformat()]
-        if not wd and not any(s.isoformat() <= k < (s + timedelta(days=7)).isoformat() for k in gas):
+        e = (s + timedelta(days=7)).isoformat()
+        wd = [r for r in days if s.isoformat() <= r["day"] < e]
+        if not wd and not any(s.isoformat() <= k < e for k in [*gas, *portal]):
             continue
-        out.append(summarize_week(s, wd, gas, today, base, weather))
+        out.append(summarize_week(s, wd, gas, today, base, weather, portal))
     return list(reversed(out))
