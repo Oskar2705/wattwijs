@@ -208,13 +208,23 @@ function barChart(host, { n, series, tick, tickEvery = 1, yFmt, tooltip }) {
       const r = Math.min(4, bw / 2, h);
       el("path", { d: `M${x} ${y + h}V${y + r}q0 -${r} ${r} -${r}h${bw - 2 * r}q${r} 0 ${r} ${r}V${y + h}Z`, fill: s.color }, bars);
     });
-    const hit = el("rect", { x: f.m.l + slot * i, y: f.m.t, width: slot, height: f.ih, fill: "transparent" }, f.svg);
-    const show = (ev) => { hit.setAttribute("fill", "var(--grid-line)"); hit.setAttribute("fill-opacity", ".6"); showTip(tooltip(i), ev.clientX, ev.clientY); };
-    hit.addEventListener("pointermove", show);
-    hit.addEventListener("pointerdown", show);
-    hit.addEventListener("pointerleave", (ev) => { hit.setAttribute("fill", "transparent"); if (ev.pointerType === "mouse") hideTip(); });
-    f.svg.insertBefore(hit, bars);
   }
+  // Eén aanraakvlak over de hele grafiek, bovenop de staven: zo valt er bij hoveren of
+  // met een vinger schuiven nooit een gat, ook niet boven op een staaf.
+  const band = el("rect", { y: f.m.t, width: slot, height: f.ih, fill: "var(--grid-line)", "fill-opacity": ".6", visibility: "hidden" }, f.svg);
+  f.svg.insertBefore(band, bars);
+  const hit = el("rect", { x: f.m.l, y: f.m.t, width: f.iw, height: f.ih, fill: "transparent" }, f.svg);
+  const show = (ev) => {
+    const r = f.svg.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * f.w;
+    const i = Math.max(0, Math.min(n - 1, Math.floor((px - f.m.l) / slot)));
+    band.setAttribute("x", f.m.l + slot * i);
+    band.setAttribute("visibility", "visible");
+    showTip(tooltip(i), ev.clientX, ev.clientY);
+  };
+  hit.addEventListener("pointermove", show);
+  hit.addEventListener("pointerdown", show);
+  hit.addEventListener("pointerleave", (ev) => { if (ev.pointerType !== "mouse") return; band.setAttribute("visibility", "hidden"); hideTip(); });
 }
 
 function legend(host, items, box = false) {
@@ -412,14 +422,18 @@ async function loadCurve() {
 }
 function drawCurve() {
   if (!curveData) return;
-  const day = curveData.day;
+  curveHasAc = drawDayCurve(curveData, $("#curveChart"), $("#curveLegend"));
+}
+// Lijngrafiek per 5 minuten van één dag: vandaag op Nu, elke dag in Geschiedenis.
+// Geeft terug of de airco-lijn getoond is.
+function drawDayCurve(data, chartEl, legendEl) {
+  const day = data.day;
   const x0 = new Date(day + "T00:00:00").getTime() / 1000;
   const x1 = x0 + 86400;
-  const pts = curveData.points;
+  const pts = data.points;
   const x = pts.map((p) => p.ts);
   const kw = (k) => pts.map((p) => (p[k] == null ? null : Math.max(p[k], 0) / 1000));
   const hasAc = !!(live && live.now.aircon_configured) || pts.some((p) => p.aircon_w > 0);
-  curveHasAc = hasAc;
   // Volgorde bewust: de airco (teal) staat niet naast de warmtepomp (roze), en is gestippeld
   // omdat die twee kleuren voor kleurenblinden op elkaar lijken.
   const series = [
@@ -428,11 +442,11 @@ function drawCurve() {
     { name: "Verbruik huis", color: COLORS.house, values: kw("house_w") },
     { name: "Warmtepomp", color: COLORS.hp, values: kw("heatpump_w") },
   ];
-  legend($("#curveLegend"), series.map((s) => [s.name, s.color, s.dash]));
-  lineChart($("#curveChart"), {
+  legend(legendEl, series.map((s) => [s.name, s.color, s.dash]));
+  lineChart(chartEl, {
     x, series, x0, x1,
     yFmt: (v) => (Number.isInteger(v) ? nl0.format(v) : nl1.format(v)),
-    xTicks: ($("#curveChart").clientWidth < 560 ? [0, 6, 12, 18, 24] : [0, 3, 6, 9, 12, 15, 18, 21, 24]).map((h) => x0 + h * 3600),
+    xTicks: (chartEl.clientWidth < 560 ? [0, 6, 12, 18, 24] : [0, 3, 6, 9, 12, 15, 18, 21, 24]).map((h) => x0 + h * 3600),
     xTickFmt: (t) => `${Math.round((t - x0) / 3600)}:00`,
     tooltip: (i) => {
       const p = pts[i];
@@ -448,6 +462,7 @@ function drawCurve() {
         tipRow(COLORS.batt, "Batterij vol", pct(p.soc));
     },
   });
+  return hasAc;
 }
 
 /* ================= meldingen wegklikken ================= */
@@ -587,7 +602,8 @@ function drawPrices() {
 }
 
 /* ================= geschiedenis ================= */
-const hist = { mode: "hour", key: localDate(), data: null, table: false };
+const hist = { mode: "hour", key: localDate(), data: null, curve: null, table: false, view: "bars" };
+try { if (localStorage.getItem("histView") === "lines") hist.view = "lines"; } catch { /* privémodus */ }
 
 function shiftKey(mode, key, dir) {
   if (mode === "hour") { const d = new Date(key + "T12:00:00"); d.setDate(d.getDate() + dir); return localDate(d); }
@@ -605,7 +621,14 @@ function keyLabel(mode, key) {
 }
 
 async function loadHistory() {
-  hist.data = await getJSON(`/api/history?mode=${hist.mode}&key=${hist.key}`);
+  const [mode, key] = [hist.mode, hist.key];
+  const [data, curve] = await Promise.all([
+    getJSON(`/api/history?mode=${mode}&key=${key}`),
+    mode === "hour" ? getJSON(`/api/curve?day=${key}`).catch(() => null) : null,
+  ]);
+  if (mode !== hist.mode || key !== hist.key) return; // intussen verder geklikt
+  hist.data = data;
+  hist.curve = curve;
   drawHistory();
 }
 
@@ -637,30 +660,39 @@ function drawHistory() {
     { name: "Opgewekt", color: COLORS.sun, values: rows.map((r) => r.solar_wh) },
     { name: "Verbruikt", color: COLORS.house, values: rows.map((r) => r.house_wh) },
   ];
-  $("#histTitle").textContent = hist.mode === "hour" ? "Opwek en verbruik per uur" : hist.mode === "day" ? "Opwek en verbruik per dag" : "Opwek en verbruik per maand";
-  legend($("#histLegend"), series.map((s) => [s.name, s.color]), true);
   const small = $("#histChart").clientWidth < 560;
-  barChart($("#histChart"), {
-    n: rows.length, series,
-    tick: (i) => bucketLabel(hist.mode, rows[i].bucket),
-    tickEvery: hist.mode === "hour" ? (small ? 3 : 2) : hist.mode === "day" ? (small ? 5 : 2) : 1,
-    yFmt: (v) => (Number.isInteger(v / 1000) ? nl0.format(v / 1000) : nl1.format(v / 1000)),
-    tooltip: (i) => {
-      const r = rows[i];
-      if (r.solar_wh == null) return `<b>${bucketLabel(hist.mode, r.bucket, true)}</b>Geen gegevens`;
-      return `<b>${bucketLabel(hist.mode, r.bucket, true)}</b>` +
-        tipRow(COLORS.sun, "Opgewekt", fmtKwh(r.solar_wh)) +
-        tipRow(COLORS.house, "Verbruikt", fmtKwh(r.house_wh)) +
-        tipRow(COLORS.hp, "waarvan warmtepomp", fmtKwh(r.heatpump_wh)) +
-        (r.aircon_wh > 0 ? tipRow(COLORS.ac, "waarvan airco's (geschat)", fmtKwh(r.aircon_wh)) : "") +
-        `<div class="sep"></div>` +
-        tipRow(COLORS.grid, "Van het net", fmtKwh(r.import_wh)) +
-        tipRow(COLORS.grid, "Teruggeleverd", fmtKwh(r.export_wh)) +
-        tipRow(COLORS.batt, "Batterij geladen", fmtKwh(r.charge_wh)) +
-        tipRow(COLORS.batt, "Batterij ontladen", fmtKwh(r.discharge_wh)) +
-        (r.net_cost != null ? `<div class="sep"></div>` + tipRow("var(--ink)", "Kosten (netto)", eur(r.net_cost)) : "");
-    },
-  });
+  $("#histView").hidden = hist.mode !== "hour";
+  document.querySelectorAll("#histView button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.view === hist.view)));
+  const lines = hist.mode === "hour" && hist.view === "lines";
+  $("#histHint").hidden = !lines;
+  if (lines) {
+    $("#histTitle").textContent = "Verloop van de dag";
+    drawDayCurve(hist.curve || { day: hist.key, points: [] }, $("#histChart"), $("#histLegend"));
+  } else {
+    $("#histTitle").textContent = hist.mode === "hour" ? "Opwek en verbruik per uur" : hist.mode === "day" ? "Opwek en verbruik per dag" : "Opwek en verbruik per maand";
+    legend($("#histLegend"), series.map((s) => [s.name, s.color]), true);
+    barChart($("#histChart"), {
+      n: rows.length, series,
+      tick: (i) => bucketLabel(hist.mode, rows[i].bucket),
+      tickEvery: hist.mode === "hour" ? (small ? 3 : 2) : hist.mode === "day" ? (small ? 5 : 2) : 1,
+      yFmt: (v) => (Number.isInteger(v / 1000) ? nl0.format(v / 1000) : nl1.format(v / 1000)),
+      tooltip: (i) => {
+        const r = rows[i];
+        if (r.solar_wh == null) return `<b>${bucketLabel(hist.mode, r.bucket, true)}</b>Geen gegevens`;
+        return `<b>${bucketLabel(hist.mode, r.bucket, true)}</b>` +
+          tipRow(COLORS.sun, "Opgewekt", fmtKwh(r.solar_wh)) +
+          tipRow(COLORS.house, "Verbruikt", fmtKwh(r.house_wh)) +
+          tipRow(COLORS.hp, "waarvan warmtepomp", fmtKwh(r.heatpump_wh)) +
+          (r.aircon_wh > 0 ? tipRow(COLORS.ac, "waarvan airco's (geschat)", fmtKwh(r.aircon_wh)) : "") +
+          `<div class="sep"></div>` +
+          tipRow(COLORS.grid, "Van het net", fmtKwh(r.import_wh)) +
+          tipRow(COLORS.grid, "Teruggeleverd", fmtKwh(r.export_wh)) +
+          tipRow(COLORS.batt, "Batterij geladen", fmtKwh(r.charge_wh)) +
+          tipRow(COLORS.batt, "Batterij ontladen", fmtKwh(r.discharge_wh)) +
+          (r.net_cost != null ? `<div class="sep"></div>` + tipRow("var(--ink)", "Kosten (netto)", eur(r.net_cost)) : "");
+      },
+    });
+  }
 
   const hasMoney = rows.some((r) => r.net_cost != null);
   $("#histMoneyCard").hidden = !hasMoney;
@@ -705,9 +737,16 @@ function drawHistory() {
 }
 
 function initHistory() {
-  document.querySelectorAll(".seg button").forEach((b) =>
+  document.querySelectorAll("#histView button").forEach((b) =>
     b.addEventListener("click", () => {
-      document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+      hist.view = b.dataset.view;
+      try { localStorage.setItem("histView", hist.view); } catch { /* privémodus */ }
+      drawHistory();
+    })
+  );
+  document.querySelectorAll(".controls .seg button").forEach((b) =>
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".controls .seg button").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
       hist.mode = b.dataset.mode;
       hist.key = defaultKey(hist.mode);
       loadHistory();

@@ -155,7 +155,14 @@
       <div class="card">
         <div class="card-head">
           <h3 id="histTitle">Opwek en verbruik</h3>
-          <button class="link" id="tableToggle" aria-expanded="false">Toon als tabel</button>
+          <div class="card-tools">
+            <div class="seg seg-sm" id="histView" role="radiogroup" aria-label="Weergave">
+              <button role="radio" data-view="bars" aria-checked="true">Staven</button>
+              <button role="radio" data-view="lines" aria-checked="false">Lijnen</button>
+            </div>
+            <button class="link" id="tableToggle" aria-expanded="false">Toon als tabel</button>
+          </div>
+          <p class="hint" id="histHint" hidden>Vermogen in kW, per 5 minuten</p>
         </div>
         <div class="legend" id="histLegend"></div>
         <div class="chart" id="histChart"></div>
